@@ -10,7 +10,6 @@ import (
 
 	"github.com/celestix/gotgproto"
 	"github.com/celestix/gotgproto/sessionMaker"
-	"github.com/glebarez/sqlite"
 )
 
 var Bot *gotgproto.Client
@@ -28,9 +27,9 @@ func StartClient(log *zap.Logger) (*gotgproto.Client, error) {
 			config.ValueOf.ApiHash,
 			gotgproto.ClientTypeBot(config.ValueOf.BotToken),
 			&gotgproto.ClientOpts{
-				Session: sessionMaker.SqlSession(
-					sqlite.Open("fsb.session"),
-				),
+				// SimpleSession keeps session in memory — no SQLite file needed.
+				// The bot will re-auth on every restart (token-based bots do this instantly).
+				Session:          sessionMaker.SimpleSession(),
 				DisableCopyright: true,
 			},
 		)
