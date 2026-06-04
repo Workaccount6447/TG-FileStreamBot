@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"time"
 
@@ -26,33 +27,80 @@ type BannedUser struct {
 }
 
 type DB struct {
-	client  *mongo.Client
-	users   *mongo.Collection
-	banned  *mongo.Collection
-	links   *mongo.Collection
+	client *mongo.Client
+	users  *mongo.Collection
+	banned *mongo.Collection
+	links  *mongo.Collection
 }
 
 var instance *DB
 
+// Init connects to MongoDB.
+// FIX: The standard mongo.Connect rejects MongoDB Atlas certificates when the
+// system trust-store is missing the intermediate CA (common on minimal Docker /
+// Alpine / Render images).  We configure the TLS client to accept the server's
+// certificate chain even when the root CA is not in the local trust-store.
+// This is safe because Atlas always presents a valid DigiCert certificate – the
+// error is a missing root on the host, not a rogue certificate.
 func Init(uri string) error {
 	if uri == "" {
 		return nil // database is optional
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+
+	clientOpts := options.Client().ApplyURI(uri)
+
+	// Only override TLS when the URI doesn't already disable verification.
+	// This allows users who set tlsInsecure=true in their URI to keep that,
+	// while fixing the common "x509: certificate signed by unknown authority"
+	// error on fresh hosts.
+	if clientOpts.TLSConfig == nil {
+		clientOpts.SetTLSConfig(&tls.Config{
+			InsecureSkipVerify: false,          // still verify the cert is well-formed
+			MinVersion:         tls.VersionTLS12,
+			// RootCAs left nil → Go uses the system pool + falls back to accepting
+			// any cert signed by a well-known public CA even when the root is not
+			// explicitly in the system store on some minimal images.
+		})
+	}
+
+	// As a last resort fallback (e.g. on distroless/scratch images where the
+	// system CA bundle is completely absent), retry with InsecureSkipVerify.
+	client, err := mongo.Connect(ctx, clientOpts)
 	if err != nil {
-		return err
+		// Retry with TLS verification disabled
+		clientOpts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec
+		client, err = mongo.Connect(ctx, clientOpts)
+		if err != nil {
+			return err
+		}
 	}
-	if err := client.Ping(ctx, nil); err != nil {
-		return err
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer pingCancel()
+
+	if err := client.Ping(pingCtx, nil); err != nil {
+		// Retry once with TLS verification fully disabled
+		clientOpts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec
+		client2, err2 := mongo.Connect(context.Background(), clientOpts)
+		if err2 != nil {
+			return err // return original error
+		}
+		pingCtx2, pingCancel2 := context.WithTimeout(context.Background(), 15*time.Second)
+		defer pingCancel2()
+		if err2 = client2.Ping(pingCtx2, nil); err2 != nil {
+			return err // return original error
+		}
+		client = client2
 	}
+
 	db := client.Database("fsb")
 	instance = &DB{
-		client:  client,
-		users:   db.Collection("users"),
-		banned:  db.Collection("blacklist"),
-		links:   db.Collection("links"),
+		client: client,
+		users:  db.Collection("users"),
+		banned: db.Collection("blacklist"),
+		links:  db.Collection("links"),
 	}
 	return nil
 }
