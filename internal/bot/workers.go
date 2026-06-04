@@ -4,15 +4,12 @@ import (
 	"EverythingSuckz/fsb/config"
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/celestix/gotgproto"
 	"github.com/celestix/gotgproto/sessionMaker"
-	"github.com/glebarez/sqlite"
 	"github.com/gotd/td/tg"
 	"go.uber.org/zap"
 )
@@ -100,14 +97,6 @@ func StartWorkers(log *zap.Logger) (*BotWorkers, error) {
 		return Workers, nil
 	}
 	Workers.log.Sugar().Info("Starting")
-	if config.ValueOf.UseSessionFile {
-		Workers.log.Sugar().Info("Using session file for workers")
-		newpath := filepath.Join(".", "sessions")
-		if err := os.MkdirAll(newpath, os.ModePerm); err != nil {
-			Workers.log.Error("Failed to create sessions directory", zap.Error(err))
-			return nil, err
-		}
-	}
 
 	var wg sync.WaitGroup
 	var successfulStarts int32
@@ -140,7 +129,7 @@ func StartWorkers(log *zap.Logger) (*BotWorkers, error) {
 		}(i)
 	}
 
-	wg.Wait() // Wait for all goroutines to finish
+	wg.Wait()
 	Workers.log.Sugar().Infof("Successfully started %d/%d bots", successfulStarts, totalBots)
 	return Workers, nil
 }
@@ -148,18 +137,15 @@ func StartWorkers(log *zap.Logger) (*BotWorkers, error) {
 func startWorker(l *zap.Logger, botToken string, index int) (*gotgproto.Client, error) {
 	log := l.Named("Worker").Sugar()
 	log.Infof("Starting worker with index - %d", index)
-	var sessionType sessionMaker.SessionConstructor
-	if config.ValueOf.UseSessionFile {
-		sessionType = sessionMaker.SqlSession(sqlite.Open(fmt.Sprintf("sessions/worker-%d.session", index)))
-	} else {
-		sessionType = sessionMaker.SimpleSession()
-	}
+
+	// All workers use SimpleSession — no SQLite files, no sessions/ directory.
+	// Bot tokens re-auth instantly on every start, so no session persistence needed.
 	client, err := gotgproto.NewClient(
 		int(config.ValueOf.ApiID),
 		config.ValueOf.ApiHash,
 		gotgproto.ClientTypeBot(botToken),
 		&gotgproto.ClientOpts{
-			Session:          sessionType,
+			Session:          sessionMaker.SimpleSession(),
 			DisableCopyright: true,
 			Middlewares:      GetFloodMiddleware(log.Desugar()),
 		},
