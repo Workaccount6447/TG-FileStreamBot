@@ -53,7 +53,7 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 	if database.IsEnabled() {
 		db := database.GetDB()
 		if db.IsUserBanned(context.Background(), chatId) {
-			devLink := updatesURL()
+			devLink := getUpdatesURL()
 			ctx.Reply(u, ext.ReplyTextString(
 				fmt.Sprintf("Sᴏʀʀʏ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.\n\nContact Developer: %s", devLink),
 			), nil)
