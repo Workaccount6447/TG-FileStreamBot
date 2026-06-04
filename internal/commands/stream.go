@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"EverythingSuckz/fsb/config"
+	"EverythingSuckz/fsb/internal/database"
 	"EverythingSuckz/fsb/internal/utils"
 
 	"github.com/celestix/gotgproto/dispatcher"
@@ -12,12 +14,12 @@ import (
 	"github.com/celestix/gotgproto/ext"
 	"github.com/celestix/gotgproto/storage"
 	"github.com/celestix/gotgproto/types"
-	"github.com/gotd/td/telegram/message/styling"
+	"github.com/dustin/go-humanize"
 	"github.com/gotd/td/tg"
 )
 
 func (m *command) LoadStream(dispatcher dispatcher.Dispatcher) {
-	log := m.log.Named("start")
+	log := m.log.Named("stream")
 	defer log.Sugar().Info("Loaded")
 	dispatcher.AddHandler(
 		handlers.NewMessage(nil, sendLink),
@@ -46,10 +48,28 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 	if peerChatId.Type != int(storage.TypeUser) {
 		return dispatcher.EndGroups
 	}
+
+	// Ban check
+	if database.IsEnabled() {
+		db := database.GetDB()
+		if db.IsUserBanned(context.Background(), chatId) {
+			devLink := "https://t.me/"
+			if config.ValueOf.UpdatesChannel != "" {
+				devLink = "https://t.me/" + config.ValueOf.UpdatesChannel
+			}
+			ctx.Reply(u, ext.ReplyTextString(
+				fmt.Sprintf("Sᴏʀʀʏ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.\n\nContact Developer: %s", devLink),
+			), nil)
+			return dispatcher.EndGroups
+		}
+	}
+
+	// Allowed users check
 	if len(config.ValueOf.AllowedUsers) != 0 && !utils.Contains(config.ValueOf.AllowedUsers, chatId) {
 		ctx.Reply(u, ext.ReplyTextString("You are not allowed to use this bot."), nil)
 		return dispatcher.EndGroups
 	}
+
 	supported, err := supportedMediaFilter(u.EffectiveMessage)
 	if err != nil {
 		return err
@@ -58,6 +78,8 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		ctx.Reply(u, ext.ReplyTextString("Sorry, this message type is unsupported."), nil)
 		return dispatcher.EndGroups
 	}
+
+	// Forward file to log channel
 	update, err := utils.ForwardMessages(ctx, chatId, config.ValueOf.LogChannelID, u.EffectiveMessage.ID)
 	if err != nil {
 		utils.Logger.Sugar().Error(err)
@@ -84,47 +106,81 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		ctx.Reply(u, ext.ReplyTextString("Error - unexpected message type"), nil)
 		return dispatcher.EndGroups
 	}
-	doc := msg.Media
-	file, err := utils.FileFromMedia(doc)
+	file, err := utils.FileFromMedia(msg.Media)
 	if err != nil {
 		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("Error - %s", err.Error())), nil)
 		return dispatcher.EndGroups
 	}
-	fullHash := utils.PackFile(
-		file.FileName,
-		file.FileSize,
-		file.MimeType,
-		file.ID,
-	)
+
+	fullHash := utils.PackFile(file.FileName, file.FileSize, file.MimeType, file.ID)
 	hash := utils.GetShortHash(fullHash)
-	link := fmt.Sprintf("%s/stream/%d?hash=%s", config.ValueOf.Host, messageID, hash)
-	text := styling.Code(link)
+	streamLink := fmt.Sprintf("%s/stream/%d?hash=%s", config.ValueOf.Host, messageID, hash)
+	downloadLink := streamLink + "&d=true"
+
+	// Track in database
+	if database.IsEnabled() {
+		db := database.GetDB()
+		_ = db.AddLink(context.Background(), chatId, streamLink)
+		db.IncrLinks(context.Background(), chatId)
+	}
+
+	// Human-readable file size
+	fileSize := humanize.IBytes(uint64(file.FileSize))
+
+	// Bot username for share link
+	botUsername := ctx.Self.Username
+	shareLink := fmt.Sprintf("https://t.me/%s?start=file_%d", botUsername, messageID)
+
+	// Build the reply text
+	isMedia := strings.Contains(file.MimeType, "video") ||
+		strings.Contains(file.MimeType, "audio") ||
+		strings.Contains(file.MimeType, "pdf")
+
+	var replyText string
+	if isMedia {
+		replyText = fmt.Sprintf(
+			"𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !\n\n"+
+				"📂 Fɪʟᴇ ɴᴀᴍᴇ : %s\n\n"+
+				"📦 Fɪʟᴇ ꜱɪᴢᴇ : %s\n\n"+
+				"📥 Dᴏᴡɴʟᴏᴀᴅ : %s\n\n"+
+				"🖥 Wᴀᴛᴄʜ : %s\n\n"+
+				"🔗 Sʜᴀʀᴇ : %s\n\n"+
+				"Oᴘᴇɴ ᴛʜɪs ʟɪɴᴋ ᴏɴ Bʀᴏᴡsᴇʀ 🌐 ᴛᴏ ᴀᴠᴏɪᴅ ɪssᴜᴇs.",
+			file.FileName, fileSize, downloadLink, streamLink, shareLink,
+		)
+	} else {
+		replyText = fmt.Sprintf(
+			"𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !\n\n"+
+				"📂 Fɪʟᴇ ɴᴀᴍᴇ : %s\n\n"+
+				"📦 Fɪʟᴇ ꜱɪᴢᴇ : %s\n\n"+
+				"📥 Dᴏᴡɴʟᴏᴀᴅ : %s\n\n"+
+				"🔗 Sʜᴀʀᴇ : %s\n\n"+
+				"Oᴘᴇɴ ᴛʜɪs ʟɪɴᴋ ᴏɴ Bʀᴏᴡsᴇʀ 🌐 ᴛᴏ ᴀᴠᴏɪᴅ ɪssᴜᴇs.",
+			file.FileName, fileSize, downloadLink, shareLink,
+		)
+	}
+
+	// Inline buttons
 	row := tg.KeyboardButtonRow{
 		Buttons: []tg.KeyboardButtonClass{
-			&tg.KeyboardButtonURL{
-				Text: "Download",
-				URL:  link + "&d=true",
-			},
+			&tg.KeyboardButtonURL{Text: "📥 Dᴏᴡɴʟᴏᴀᴅ", URL: downloadLink},
 		},
 	}
-	if strings.Contains(file.MimeType, "video") || strings.Contains(file.MimeType, "audio") || strings.Contains(file.MimeType, "pdf") {
+	if isMedia {
 		row.Buttons = append(row.Buttons, &tg.KeyboardButtonURL{
-			Text: "Stream",
-			URL:  link,
+			Text: "🖥 Wᴀᴛᴄʜ",
+			URL:  streamLink,
 		})
 	}
-	markup := &tg.ReplyInlineMarkup{
-		Rows: []tg.KeyboardButtonRow{row},
-	}
-	if strings.Contains(link, "http://localhost") {
-		_, err = ctx.Reply(u, ext.ReplyTextStyledText(text), &ext.ReplyOpts{
-			NoWebpage:        false,
+	markup := &tg.ReplyInlineMarkup{Rows: []tg.KeyboardButtonRow{row}}
+
+	if strings.Contains(streamLink, "http://localhost") {
+		_, err = ctx.Reply(u, ext.ReplyTextString(replyText), &ext.ReplyOpts{
 			ReplyToMessageId: u.EffectiveMessage.ID,
 		})
 	} else {
-		_, err = ctx.Reply(u, ext.ReplyTextStyledText(text), &ext.ReplyOpts{
+		_, err = ctx.Reply(u, ext.ReplyTextString(replyText), &ext.ReplyOpts{
 			Markup:           markup,
-			NoWebpage:        false,
 			ReplyToMessageId: u.EffectiveMessage.ID,
 		})
 	}
