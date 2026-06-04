@@ -4,6 +4,7 @@ import (
 	"EverythingSuckz/fsb/config"
 	"EverythingSuckz/fsb/internal/bot"
 	"EverythingSuckz/fsb/internal/cache"
+	"EverythingSuckz/fsb/internal/database"
 	"EverythingSuckz/fsb/internal/routes"
 	"EverythingSuckz/fsb/internal/types"
 	"EverythingSuckz/fsb/internal/utils"
@@ -35,6 +36,19 @@ func runApp(cmd *cobra.Command, args []string) {
 	log := utils.Logger
 	mainLogger := log.Named("Main")
 	mainLogger.Info("Starting server")
+
+	// Initialize MongoDB database (optional)
+	if config.ValueOf.DatabaseURL != "" {
+		mainLogger.Info("Connecting to MongoDB...")
+		if err := database.Init(config.ValueOf.DatabaseURL); err != nil {
+			mainLogger.Sugar().Warnf("Failed to connect to MongoDB: %v — admin features disabled", err)
+		} else {
+			mainLogger.Info("MongoDB connected successfully")
+		}
+	} else {
+		mainLogger.Info("DATABASE_URL not set — admin features (ban/broadcast/status) disabled")
+	}
+
 	router := getRouter(log)
 
 	mainBot, err := bot.StartClient(log)
