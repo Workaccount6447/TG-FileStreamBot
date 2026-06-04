@@ -75,20 +75,13 @@ func start(ctx *ext.Context, u *ext.Update) error {
 	}
 
 	// 4. Send 👋, wait 1s, delete it
-	waveUpd, waveErr := ctx.Reply(u, ext.ReplyTextString("👋"), nil)
-	if waveErr == nil && waveUpd != nil {
+	waveMsg, waveErr := ctx.Reply(u, ext.ReplyTextString("👋"), nil)
+	if waveErr == nil && waveMsg != nil {
 		time.Sleep(1 * time.Second)
-		if upds, ok := waveUpd.(*tg.Updates); ok {
-			for _, upd := range upds.Updates {
-				if msgIDUpd, ok := upd.(*tg.UpdateMessageID); ok {
-					ctx.Raw.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-						Revoke: true,
-						ID:     []int{msgIDUpd.ID},
-					})
-					break
-				}
-			}
-		}
+		ctx.Raw.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
+			Revoke: true,
+			ID:     []int{waveMsg.ID},
+		})
 	}
 
 	// 5. Build inline buttons
