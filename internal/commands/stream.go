@@ -53,10 +53,7 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 	if database.IsEnabled() {
 		db := database.GetDB()
 		if db.IsUserBanned(context.Background(), chatId) {
-			devLink := "https://t.me/"
-			if config.ValueOf.UpdatesChannel != "" {
-				devLink = "https://t.me/" + config.ValueOf.UpdatesChannel
-			}
+			devLink := updatesURL()
 			ctx.Reply(u, ext.ReplyTextString(
 				fmt.Sprintf("Sᴏʀʀʏ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.\n\nContact Developer: %s", devLink),
 			), nil)
@@ -127,9 +124,11 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 	// Human-readable file size
 	fileSize := humanize.IBytes(uint64(file.FileSize))
 
-	// Bot username for share link
+	// FIX: Share link now contains both the message ID AND the short hash so that
+	// only someone who already has the link can use it – random enumeration of
+	// message IDs is no longer enough to access a file.
 	botUsername := ctx.Self.Username
-	shareLink := fmt.Sprintf("https://t.me/%s?start=file_%d", botUsername, messageID)
+	shareLink := fmt.Sprintf("https://t.me/%s?start=file_%d_%s", botUsername, messageID, hash)
 
 	// Build the reply text
 	isMedia := strings.Contains(file.MimeType, "video") ||
