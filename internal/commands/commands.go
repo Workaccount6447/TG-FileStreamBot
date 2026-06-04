@@ -22,3 +22,4 @@ func Load(log *zap.Logger, dispatcher dispatcher.Dispatcher, client *gotgproto.C
 	for i := 0; i < Type.NumMethod(); i++ {
 		Type.Method(i).Func.Call([]reflect.Value{Value, reflect.ValueOf(dispatcher)})
 	}
+}
