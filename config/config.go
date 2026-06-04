@@ -46,7 +46,6 @@ type config struct {
 	Port           int          `envconfig:"PORT" default:"8080"`
 	Host           string       `envconfig:"HOST" default:""`
 	HashLength     int          `envconfig:"HASH_LENGTH" default:"6"`
-	UseSessionFile bool         `envconfig:"USE_SESSION_FILE" default:"true"`
 	UserSession    string       `envconfig:"USER_SESSION"`
 	UsePublicIP    bool         `envconfig:"USE_PUBLIC_IP" default:"false"`
 	AllowedUsers   allowedUsers `envconfig:"ALLOWED_USERS"`
@@ -57,6 +56,16 @@ type config struct {
 	StreamBufferCount int `envconfig:"STREAM_BUFFER_COUNT" default:"8"`
 	StreamTimeoutSec  int `envconfig:"STREAM_TIMEOUT_SEC" default:"30"`
 	StreamMaxRetries  int `envconfig:"STREAM_MAX_RETRIES" default:"3"`
+
+	// database & owner features
+	DatabaseURL    string `envconfig:"DATABASE_URL"`
+	OwnerID        int64  `envconfig:"OWNER_ID"`
+	ULogChannelID  int64  `envconfig:"ULOG_CHANNEL"`
+	ForceSub       bool   `envconfig:"FORCE_SUB" default:"false"`
+	ForceSubID     string `envconfig:"FORCE_SUB_ID"`
+	UpdatesChannel string `envconfig:"UPDATES_CHANNEL" default:""`
+	StartPic       string `envconfig:"START_PIC" default:""`
+	BotName        string `envconfig:"BOT_NAME" default:"File to Link"`
 }
 
 var botTokenRegex = regexp.MustCompile(`MULTI\_TOKEN\d+=(.*)`)
