@@ -40,13 +40,13 @@ func (m *command) myFiles(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 
-	return m.sendFileCard(ctx, u, chatId, 0, false)
+	return m.sendFileCard(ctx, u, chatId, 0, false, 0)
 }
 
 // sendFileCard fetches page `page` for `userID` and either:
 //   - sends a new message  (isEdit=false) — used by /myfiles
 //   - edits existing message (isEdit=true) — used by prev/next callbacks
-func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, page int, isEdit bool) error {
+func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, page int, isEdit bool, msgEditID int) error {
 	db := database.GetDB()
 	files, total, err := db.GetUserFiles(context.Background(), userID, page, myFilesPerPage)
 	if err != nil || total == 0 || len(files) == 0 {
@@ -54,7 +54,7 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 		if isEdit {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:    &tg.InputPeerUser{UserID: userID},
-				ID:      u.EffectiveMessage.ID,
+				ID:      msgEditID,
 				Message: msg,
 			})
 		} else {
@@ -169,10 +169,12 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 
 	if isEdit {
 		// Editing a message that may have media — use NoWebpage flag to avoid
-		// Telegram trying to re-embed a link preview on edit
+		// Telegram trying to re-embed a link preview on edit.
+		// msgEditID is passed explicitly because in callback updates
+		// u.EffectiveMessage is nil — the message ID comes from CallbackQuery.MsgID.
 		ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 			Peer:        &tg.InputPeerUser{UserID: userID},
-			ID:          u.EffectiveMessage.ID,
+			ID:          msgEditID,
 			Message:     cardText,
 			ReplyMarkup: markup,
 			NoWebpage:   true,
@@ -322,5 +324,7 @@ func (m *command) myFilesPageCallback(ctx *ext.Context, u *ext.Update, pageStr s
 		QueryID: u.CallbackQuery.QueryID,
 	})
 
-	return m.sendFileCard(ctx, u, userID, page, true)
+	// u.EffectiveMessage is nil for callback updates — get message ID from CallbackQuery
+	msgID := u.CallbackQuery.MsgID
+	return m.sendFileCard(ctx, u, userID, page, true, msgID)
 }
