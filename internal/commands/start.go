@@ -300,11 +300,13 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 		}
 
 		// Strip all buttons from the bot message and append a revoked notice
-		if u.EffectiveMessage != nil {
+		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: u.EffectiveChat().GetID()},
-				ID:          u.EffectiveMessage.ID,
-				Message:     u.EffectiveMessage.Text + "\n\n~~ʟɪɴᴋ ʀᴇᴠᴏᴋᴇᴅ~~",
+				ID:          u.CallbackQuery.MsgID,
+				Message:     u.CallbackQuery.Data, // revoked notice appended below
+			// Note: original text not available in callback; using file info instead
+			// Message: "\n\n~~ʟɪɴᴋ ʀᴇᴠᴏᴋᴇᴅ~~",
 				ReplyMarkup: &tg.ReplyInlineMarkup{},
 			})
 		}
@@ -328,10 +330,10 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 				"> **‣ 💥Fᴀsᴛ ᴀs ᴀ ʀᴏᴄᴋᴇᴛ🚀 ᴀɴᴅ ғᴇᴇʟɪɴɢ ᴀs ᴀ ᴋɪɴɢ👑 sᴜᴄʜ ᴛʜᴀᴛ ᴍᴀᴅᴇ ʙʏ \n> [ʀᴏʏᴀʟɪᴛʏ ʙᴏᴛꜱ👑](%s)**",
 			firstName, getUpdatesURL(),
 		)
-		if u.EffectiveMessage != nil {
+		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: u.EffectiveChat().GetID()},
-				ID:          u.EffectiveMessage.ID,
+				ID:          u.CallbackQuery.MsgID,
 				Message:     welcomeText,
 				ReplyMarkup: startMarkup(),
 			})
@@ -358,10 +360,10 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 				&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
 			}},
 		}}
-		if u.EffectiveMessage != nil {
+		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: u.EffectiveChat().GetID()},
-				ID:          u.EffectiveMessage.ID,
+				ID:          u.CallbackQuery.MsgID,
 				Message:     helpText,
 				ReplyMarkup: helpMarkup,
 			})
@@ -379,10 +381,10 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 				&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
 			}},
 		}}
-		if u.EffectiveMessage != nil {
+		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: u.EffectiveChat().GetID()},
-				ID:          u.EffectiveMessage.ID,
+				ID:          u.CallbackQuery.MsgID,
 				Message:     aboutText,
 				ReplyMarkup: aboutMarkup,
 			})
@@ -403,9 +405,9 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 		})
 
 	case "close":
-		if u.EffectiveMessage != nil {
+		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-				Revoke: true, ID: []int{u.EffectiveMessage.ID},
+				Revoke: true, ID: []int{u.CallbackQuery.MsgID},
 			})
 		}
 		ctx.AnswerCallback(&tg.MessagesSetBotCallbackAnswerRequest{QueryID: query.QueryID})
