@@ -14,6 +14,7 @@ import (
 	"github.com/celestix/gotgproto/dispatcher/handlers"
 	"github.com/celestix/gotgproto/ext"
 	"github.com/dustin/go-humanize"
+	"github.com/celestix/gotgproto/storage"
 	"github.com/gotd/td/tg"
 )
 
@@ -151,11 +152,6 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 		})
 	}
 
-	// ── Updates channel row ───────────────────────────────────────────────
-	updRow := tg.KeyboardButtonRow{Buttons: []tg.KeyboardButtonClass{
-		&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
-	}}
-
 	// Assemble markup
 	rows := []tg.KeyboardButtonRow{linkRow}
 	if isVideo {
@@ -164,7 +160,12 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	if len(navButtons) > 0 {
 		rows = append(rows, tg.KeyboardButtonRow{Buttons: navButtons})
 	}
-	rows = append(rows, updRow)
+	// Only add updates channel button if UPDATES_CHANNEL is configured
+	if config.ValueOf.UpdatesChannel != "" {
+		rows = append(rows, tg.KeyboardButtonRow{Buttons: []tg.KeyboardButtonClass{
+			&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
+		}})
+	}
 	markup := &tg.ReplyInlineMarkup{Rows: rows}
 
 	if isEdit {
@@ -300,7 +301,7 @@ func (m *command) getLogChannelInput(ctx *ext.Context) (*tg.InputChannel, error)
 	if !ok {
 		return nil, fmt.Errorf("unexpected channel type")
 	}
-	ctx.PeerStorage.AddPeer(ch.GetID(), ch.AccessHash, 0, "")
+	ctx.PeerStorage.AddPeer(ch.GetID(), ch.AccessHash, storage.TypeChannel, "")
 	return ch.AsInput(), nil
 }
 
