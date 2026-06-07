@@ -304,9 +304,7 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: u.EffectiveChat().GetID()},
 				ID:          u.CallbackQuery.MsgID,
-				Message:     u.CallbackQuery.Data, // revoked notice appended below
-			// Note: original text not available in callback; using file info instead
-			// Message: "\n\n~~ʟɪɴᴋ ʀᴇᴠᴏᴋᴇᴅ~~",
+				Message:     "~~ʟɪɴᴋ ʀᴇᴠᴏᴋᴇᴅ~~ ✅",
 				ReplyMarkup: &tg.ReplyInlineMarkup{},
 			})
 		}
