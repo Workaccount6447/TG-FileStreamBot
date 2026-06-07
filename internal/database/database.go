@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -26,6 +27,22 @@ type BannedUser struct {
 	BanDate time.Time `bson:"ban_date"`
 }
 
+// FileLink stores every file a user has streamed through the bot.
+// Extended fields (FileName, FileSize, MimeType, MessageID, Hash) are used
+// by /myfiles to show rich info and rebuild stream/download/share links
+// without querying Telegram again.
+type FileLink struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty"`
+	UserID    int64              `bson:"user_id"`
+	Link      string             `bson:"link"`        // stream URL
+	FileName  string             `bson:"file_name"`
+	FileSize  int64              `bson:"file_size"`
+	MimeType  string             `bson:"mime_type"`
+	MessageID int                `bson:"message_id"`
+	Hash      string             `bson:"hash"`        // short hash
+	CreatedAt time.Time          `bson:"created_at"`
+}
+
 type DB struct {
 	client *mongo.Client
 	users  *mongo.Collection
@@ -35,41 +52,24 @@ type DB struct {
 
 var instance *DB
 
-// Init connects to MongoDB.
-// FIX: The standard mongo.Connect rejects MongoDB Atlas certificates when the
-// system trust-store is missing the intermediate CA (common on minimal Docker /
-// Alpine / Render images).  We configure the TLS client to accept the server's
-// certificate chain even when the root CA is not in the local trust-store.
-// This is safe because Atlas always presents a valid DigiCert certificate – the
-// error is a missing root on the host, not a rogue certificate.
 func Init(uri string) error {
 	if uri == "" {
-		return nil // database is optional
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	clientOpts := options.Client().ApplyURI(uri)
 
-	// Only override TLS when the URI doesn't already disable verification.
-	// This allows users who set tlsInsecure=true in their URI to keep that,
-	// while fixing the common "x509: certificate signed by unknown authority"
-	// error on fresh hosts.
 	if clientOpts.TLSConfig == nil {
 		clientOpts.SetTLSConfig(&tls.Config{
-			InsecureSkipVerify: false,          // still verify the cert is well-formed
+			InsecureSkipVerify: false,
 			MinVersion:         tls.VersionTLS12,
-			// RootCAs left nil → Go uses the system pool + falls back to accepting
-			// any cert signed by a well-known public CA even when the root is not
-			// explicitly in the system store on some minimal images.
 		})
 	}
 
-	// As a last resort fallback (e.g. on distroless/scratch images where the
-	// system CA bundle is completely absent), retry with InsecureSkipVerify.
 	client, err := mongo.Connect(ctx, clientOpts)
 	if err != nil {
-		// Retry with TLS verification disabled
 		clientOpts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec
 		client, err = mongo.Connect(ctx, clientOpts)
 		if err != nil {
@@ -81,16 +81,15 @@ func Init(uri string) error {
 	defer pingCancel()
 
 	if err := client.Ping(pingCtx, nil); err != nil {
-		// Retry once with TLS verification fully disabled
 		clientOpts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec
 		client2, err2 := mongo.Connect(context.Background(), clientOpts)
 		if err2 != nil {
-			return err // return original error
+			return err
 		}
 		pingCtx2, pingCancel2 := context.WithTimeout(context.Background(), 15*time.Second)
 		defer pingCancel2()
 		if err2 = client2.Ping(pingCtx2, nil); err2 != nil {
-			return err // return original error
+			return err
 		}
 		client = client2
 	}
@@ -102,16 +101,18 @@ func Init(uri string) error {
 		banned: db.Collection("blacklist"),
 		links:  db.Collection("links"),
 	}
+
+	// Ensure indexes for fast per-user pagination
+	instance.links.Indexes().CreateOne(context.Background(), mongo.IndexModel{
+		Keys:    bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: -1}},
+		Options: options.Index().SetBackground(true),
+	})
+
 	return nil
 }
 
-func IsEnabled() bool {
-	return instance != nil
-}
-
-func GetDB() *DB {
-	return instance
-}
+func IsEnabled() bool  { return instance != nil }
+func GetDB() *DB       { return instance }
 
 // ---- User Management ----
 
@@ -179,17 +180,135 @@ func (d *DB) TotalBanned(ctx context.Context) (int64, error) {
 	return d.banned.CountDocuments(ctx, bson.M{})
 }
 
-// ---- Link Stats ----
+// ---- Link Management ----
 
 func (d *DB) TotalLinks(ctx context.Context) (int64, error) {
 	return d.links.CountDocuments(ctx, bson.M{})
 }
 
-func (d *DB) AddLink(ctx context.Context, userID int64, link string) error {
-	_, err := d.links.InsertOne(ctx, bson.M{
-		"user_id":    userID,
-		"link":       link,
-		"created_at": time.Now(),
-	})
+// AddFileLink stores full file metadata so /myfiles can display rich cards.
+func (d *DB) AddFileLink(ctx context.Context, fl FileLink) error {
+	fl.CreatedAt = time.Now()
+	_, err := d.links.InsertOne(ctx, fl)
 	return err
+}
+
+// Legacy shim so existing callers of AddLink still compile.
+func (d *DB) AddLink(ctx context.Context, userID int64, link string) error {
+	return d.AddFileLink(ctx, FileLink{
+		UserID: userID,
+		Link:   link,
+	})
+}
+
+// GetUserFiles returns one page of FileLink records for a user, newest first.
+// page is 0-based. Returns records and the total count for that user.
+func (d *DB) GetUserFiles(ctx context.Context, userID int64, page, perPage int) ([]FileLink, int64, error) {
+	filter := bson.M{"user_id": userID}
+	total, err := d.links.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(int64(page * perPage)).
+		SetLimit(int64(perPage))
+
+	cursor, err := d.links.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var files []FileLink
+	if err := cursor.All(ctx, &files); err != nil {
+		return nil, 0, err
+	}
+	return files, total, nil
+}
+
+// DeleteFileLink removes a specific link by its ObjectID.
+func (d *DB) DeleteFileLink(ctx context.Context, id primitive.ObjectID) error {
+	_, err := d.links.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
+// ── New methods for /clearfiles and /stats ────────────────────────────────
+
+// DeleteUserFiles removes ALL file links for a user. Used by /clearfiles.
+func (d *DB) DeleteUserFiles(ctx context.Context, userID int64) (int64, error) {
+	res, err := d.links.DeleteMany(ctx, bson.M{"user_id": userID})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
+
+// UserStats holds the personal statistics shown by /stats.
+type UserStats struct {
+	TotalFiles   int64
+	TotalSize    int64
+	LinksCount   int64
+	JoinDate     time.Time
+	NewestFile   *FileLink
+}
+
+// GetUserStats aggregates personal stats for a single user.
+func (d *DB) GetUserStats(ctx context.Context, userID int64) (*UserStats, error) {
+	filter := bson.M{"user_id": userID}
+
+	// Total file count
+	totalFiles, err := d.links.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Total size via aggregation pipeline
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: filter}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: nil},
+			{Key: "total_size", Value: bson.D{{Key: "$sum", Value: "$file_size"}}},
+		}}},
+	}
+	cursor, err := d.links.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var totalSize int64
+	for cursor.Next(ctx) {
+		var result struct {
+			TotalSize int64 `bson:"total_size"`
+		}
+		if err := cursor.Decode(&result); err == nil {
+			totalSize = result.TotalSize
+		}
+	}
+
+	// Newest file
+	opts := options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}})
+	var newest FileLink
+	var newestPtr *FileLink
+	if err := d.links.FindOne(ctx, filter, opts).Decode(&newest); err == nil {
+		newestPtr = &newest
+	}
+
+	// User join date + link count
+	user, err := d.GetUser(ctx, userID)
+	var joinDate time.Time
+	var linksCount int64
+	if err == nil {
+		joinDate = user.JoinDate
+		linksCount = user.Links
+	}
+
+	return &UserStats{
+		TotalFiles: totalFiles,
+		TotalSize:  totalSize,
+		LinksCount: linksCount,
+		JoinDate:   joinDate,
+		NewestFile: newestPtr,
+	}, nil
 }
