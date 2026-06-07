@@ -105,18 +105,6 @@ func (m *command) start(ctx *ext.Context, u *ext.Update) error {
 		}
 	}
 
-	// Wave → delete runs in background so the welcome message is not delayed (Bug 6 fix)
-	go func() {
-		waveMsg, waveErr := ctx.Reply(u, ext.ReplyTextString("👋"), nil)
-		if waveErr == nil && waveMsg != nil {
-			time.Sleep(1 * time.Second)
-			ctx.Raw.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-				Revoke: true,
-				ID:     []int{waveMsg.ID},
-			})
-		}
-	}()
-
 	firstName := "there"
 	if user := u.EffectiveUser(); user != nil && user.FirstName != "" {
 		firstName = user.FirstName
@@ -222,25 +210,30 @@ func (m *command) handleFileDeepLink(ctx *ext.Context, u *ext.Update, payload st
 		return dispatcher.EndGroups
 	}
 
-	// Auto-delete after 1 hour
-	go func() {
-		time.Sleep(1 * time.Hour)
-		var sentMsgID int
-		if upd, ok := sentUpdates.(*tg.Updates); ok {
-			for _, update := range upd.Updates {
-				if msgIDUpd, ok := update.(*tg.UpdateMessageID); ok {
-					sentMsgID = msgIDUpd.ID
-					break
-				}
+	// Auto-delete after 1 hour.
+	// Use a fresh context from m.client so this goroutine is not tied to the
+	// handler's ctx which is invalidated as soon as the handler returns.
+	var sentMsgID int
+	if upd, ok := sentUpdates.(*tg.Updates); ok {
+		for _, update := range upd.Updates {
+			if msgIDUpd, ok := update.(*tg.UpdateMessageID); ok {
+				sentMsgID = msgIDUpd.ID
+				break
 			}
 		}
-		if sentMsgID != 0 {
-			ctx.Raw.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-				Revoke: true, ID: []int{sentMsgID},
+	}
+	origMsgID := u.EffectiveMessage.ID
+	capturedSentID := sentMsgID
+	go func() {
+		time.Sleep(1 * time.Hour)
+		freshCtx := m.client.CreateContext()
+		if capturedSentID != 0 {
+			freshCtx.Raw.MessagesDeleteMessages(freshCtx, &tg.MessagesDeleteMessagesRequest{
+				Revoke: true, ID: []int{capturedSentID},
 			})
 		}
-		ctx.Raw.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-			Revoke: true, ID: []int{u.EffectiveMessage.ID},
+		freshCtx.Raw.MessagesDeleteMessages(freshCtx, &tg.MessagesDeleteMessagesRequest{
+			Revoke: true, ID: []int{origMsgID},
 		})
 	}()
 
