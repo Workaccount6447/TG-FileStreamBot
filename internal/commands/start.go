@@ -43,21 +43,24 @@ func getUpdatesURL() string {
 }
 
 func startMarkup() *tg.ReplyInlineMarkup {
-	return &tg.ReplyInlineMarkup{
-		Rows: []tg.KeyboardButtonRow{
-			{Buttons: []tg.KeyboardButtonClass{
-				&tg.KeyboardButtonCallback{Text: "ʜᴇʟᴘ", Data: []byte("help")},
-				&tg.KeyboardButtonCallback{Text: "ᴀʙᴏᴜᴛ", Data: []byte("about")},
-				&tg.KeyboardButtonCallback{Text: "ᴄʟᴏsᴇ", Data: []byte("close")},
-			}},
-			{Buttons: []tg.KeyboardButtonClass{
-				&tg.KeyboardButtonCallback{Text: "ᴅᴏɴᴀᴛᴇ ⭐", Data: []byte("donate")},
-			}},
-			{Buttons: []tg.KeyboardButtonClass{
-				&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
-			}},
-		},
+	rows := []tg.KeyboardButtonRow{
+		{Buttons: []tg.KeyboardButtonClass{
+			&tg.KeyboardButtonCallback{Text: "ʜᴇʟᴘ", Data: []byte("help")},
+			&tg.KeyboardButtonCallback{Text: "ᴀʙᴏᴜᴛ", Data: []byte("about")},
+			&tg.KeyboardButtonCallback{Text: "ᴄʟᴏsᴇ", Data: []byte("close")},
+		}},
+		{Buttons: []tg.KeyboardButtonClass{
+			&tg.KeyboardButtonCallback{Text: "ᴅᴏɴᴀᴛᴇ ⭐", Data: []byte("donate")},
+		}},
 	}
+	// Only add the updates channel button if UPDATES_CHANNEL env var is set.
+	// An empty URL ("https://t.me/") is rejected by Telegram.
+	if config.ValueOf.UpdatesChannel != "" {
+		rows = append(rows, tg.KeyboardButtonRow{Buttons: []tg.KeyboardButtonClass{
+			&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
+		}})
+	}
+	return &tg.ReplyInlineMarkup{Rows: rows}
 }
 
 // ── /start ─────────────────────────────────────────────────────────────────
@@ -348,16 +351,19 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 				"ʀᴇᴘᴏʀᴛ ʙᴜɢs ᴛᴏ [ᴅᴇᴠᴇʟᴏᴘᴇʀ](%s)",
 			getUpdatesURL(),
 		)
-		helpMarkup := &tg.ReplyInlineMarkup{Rows: []tg.KeyboardButtonRow{
+		helpRows := []tg.KeyboardButtonRow{
 			{Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonCallback{Text: "ʜᴏᴍᴇ", Data: []byte("home")},
 				&tg.KeyboardButtonCallback{Text: "ᴀʙᴏᴜᴛ", Data: []byte("about")},
 				&tg.KeyboardButtonCallback{Text: "ᴄʟᴏsᴇ", Data: []byte("close")},
 			}},
-			{Buttons: []tg.KeyboardButtonClass{
+		}
+		if config.ValueOf.UpdatesChannel != "" {
+			helpRows = append(helpRows, tg.KeyboardButtonRow{Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
-			}},
-		}}
+			}})
+		}
+		helpMarkup := &tg.ReplyInlineMarkup{Rows: helpRows}
 		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: u.EffectiveChat().GetID()},
@@ -369,16 +375,19 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 		ctx.AnswerCallback(&tg.MessagesSetBotCallbackAnswerRequest{QueryID: query.QueryID})
 
 	case "about":
-		aboutMarkup := &tg.ReplyInlineMarkup{Rows: []tg.KeyboardButtonRow{
+		aboutRows := []tg.KeyboardButtonRow{
 			{Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonCallback{Text: "ʜᴏᴍᴇ", Data: []byte("home")},
 				&tg.KeyboardButtonCallback{Text: "ʜᴇʟᴘ", Data: []byte("help")},
 				&tg.KeyboardButtonCallback{Text: "ᴄʟᴏsᴇ", Data: []byte("close")},
 			}},
-			{Buttons: []tg.KeyboardButtonClass{
+		}
+		if config.ValueOf.UpdatesChannel != "" {
+			aboutRows = append(aboutRows, tg.KeyboardButtonRow{Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
-			}},
-		}}
+			}})
+		}
+		aboutMarkup := &tg.ReplyInlineMarkup{Rows: aboutRows}
 		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: u.EffectiveChat().GetID()},
