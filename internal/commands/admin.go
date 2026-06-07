@@ -1,12 +1,5 @@
 package commands
 
-// Feature #9: /ban by reply — ban the user whose message you reply to,
-// without needing to know their numeric user ID.
-//
-// /ban         (plain)          → usage error
-// /ban <id>    (with number)    → ban by ID (existing behaviour)
-// /ban         (reply to msg)   → ban the sender of the replied-to message
-
 import (
 	"EverythingSuckz/fsb/config"
 	"EverythingSuckz/fsb/internal/database"
@@ -57,13 +50,16 @@ func (m *command) LoadAdmin(d dispatcher.Dispatcher) {
 }
 
 // resolveTargetID extracts the target user ID from either:
-//   a) the first argument of the command (/ban 123456789)
-//   b) the sender of the replied-to message (/ban — as a reply)
-// Returns the ID and a human-readable display string, or an error string.
-func resolveTargetID(u *ext.Update) (int64, string, string) {
+//   a) the first argument:  /ban 123456789
+//   b) the replied-to message sender: /ban (as a reply)
+//
+// gotgproto's types.Message embeds *tg.Message — the sender is in
+// tg.Message.FromID which is a tg.PeerClass (specifically *tg.PeerUser).
+// There is no .From field — that was the compile error.
+func resolveTargetID(u *ext.Update) (targetID int64, display string, errMsg string) {
 	parts := strings.Fields(u.EffectiveMessage.Text)
 
-	// Case A: explicit ID argument
+	// Case A: explicit numeric argument
 	if len(parts) >= 2 {
 		id, err := strconv.ParseInt(parts[1], 10, 64)
 		if err != nil {
@@ -72,15 +68,26 @@ func resolveTargetID(u *ext.Update) (int64, string, string) {
 		return id, fmt.Sprintf("`%d`", id), ""
 	}
 
-	// Case B: reply to a message
+	// Case B: reply to a message — extract sender from tg.Message.FromID
 	reply := u.EffectiveMessage.ReplyToMessage
-	if reply != nil && reply.From != nil {
-		id := reply.From.ID
-		name := reply.From.FirstName
-		if reply.From.Username != "" {
-			name = "@" + reply.From.Username
+	if reply != nil && reply.Message != nil {
+		fromID := reply.Message.FromID
+		if peerUser, ok := fromID.(*tg.PeerUser); ok {
+			id := peerUser.UserID
+			// Try to get the user's name from Entities if available
+			name := fmt.Sprintf("%d", id)
+			if u.Entities != nil {
+				if tgUser, exists := u.Entities.Users[id]; exists {
+					if user, ok := tgUser.AsNotEmpty(); ok {
+						name = user.FirstName
+						if user.Username != "" {
+							name = "@" + user.Username
+						}
+					}
+				}
+			}
+			return id, fmt.Sprintf("[%s](tg://user?id=%d)", name, id), ""
 		}
-		return id, fmt.Sprintf("[%s](tg://user?id=%d)", name, id), ""
 	}
 
 	return 0, "", "Usage: `/ban <user_id>` or reply to a user's message with `/ban`"
@@ -98,7 +105,6 @@ func banUser(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 
-	// Prevent owner from banning themselves
 	if isOwner(targetID) {
 		ctx.Reply(u, ext.ReplyTextString("❌ You cannot ban the owner."), nil)
 		return dispatcher.EndGroups
@@ -117,7 +123,6 @@ func banUser(ctx *ext.Context, u *ext.Update) error {
 	}
 	_ = db.DeleteUser(bgCtx, targetID)
 
-	// Notify the banned user
 	ctx.Raw.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
 		Peer:     &tg.InputPeerUser{UserID: targetID},
 		Message:  "**Your Banned to Use The Bot**",
@@ -152,7 +157,6 @@ func unbanUser(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 
-	// Notify the unbanned user
 	ctx.Raw.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
 		Peer:     &tg.InputPeerUser{UserID: targetID},
 		Message:  "**Your Unbanned now You can use The Bot**",
