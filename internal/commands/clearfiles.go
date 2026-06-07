@@ -111,20 +111,20 @@ func (m *command) clearFilesCallback(ctx *ext.Context, u *ext.Update, action str
 				deleted,
 			)
 		}
-		if u.EffectiveMessage != nil {
+		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: userID},
-				ID:          u.EffectiveMessage.ID,
+				ID:          u.CallbackQuery.MsgID,
 				Message:     resultText,
 				ReplyMarkup: &tg.ReplyInlineMarkup{}, // remove all buttons
 			})
 		}
 
 	case "cancel":
-		if u.EffectiveMessage != nil {
+		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: userID},
-				ID:          u.EffectiveMessage.ID,
+				ID:          u.CallbackQuery.MsgID,
 				Message:     "**Cᴀɴᴄᴇʟʟᴇᴅ.** Yᴏᴜʀ ꜰɪʟᴇs ᴀʀᴇ sᴀꜰᴇ. ✅",
 				ReplyMarkup: &tg.ReplyInlineMarkup{},
 			})
