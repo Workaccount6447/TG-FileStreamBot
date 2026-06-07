@@ -45,7 +45,7 @@ type config struct {
 	Dev            bool         `envconfig:"DEV" default:"false"`
 	Port           int          `envconfig:"PORT" default:"8080"`
 	Host           string       `envconfig:"HOST" default:""`
-	HashLength     int          `envconfig:"HASH_LENGTH" default:"6"`
+	HashLength     int          `envconfig:"HASH_LENGTH" default:"16"`
 	UserSession    string       `envconfig:"USER_SESSION"`
 	UsePublicIP    bool         `envconfig:"USE_PUBLIC_IP" default:"false"`
 	AllowedUsers   allowedUsers `envconfig:"ALLOWED_USERS"`
@@ -212,16 +212,16 @@ func Load(log *zap.Logger, cmd *cobra.Command) {
 	ValueOf.setupEnvVars(log, cmd)
 	ValueOf.LogChannelID = int64(stripInt(log, int(ValueOf.LogChannelID)))
 	if ValueOf.HashLength == 0 {
-		log.Sugar().Info("HASH_LENGTH can't be 0, defaulting to 6")
-		ValueOf.HashLength = 6
+		log.Sugar().Info("HASH_LENGTH can't be 0, defaulting to 16")
+		ValueOf.HashLength = 16
 	}
-	if ValueOf.HashLength > 32 {
-		log.Sugar().Info("HASH_LENGTH can't be more than 32, changing to 32")
-		ValueOf.HashLength = 32
+	if ValueOf.HashLength > 64 {
+		log.Sugar().Info("HASH_LENGTH can't be more than 64, changing to 64 (HMAC-SHA256 max)")
+		ValueOf.HashLength = 64
 	}
 	if ValueOf.HashLength < 5 {
-		log.Sugar().Info("HASH_LENGTH can't be less than 5, defaulting to 6")
-		ValueOf.HashLength = 6
+		log.Sugar().Info("HASH_LENGTH can't be less than 5, defaulting to 16")
+		ValueOf.HashLength = 16
 	}
 	if ValueOf.StreamConcurrency <= 0 {
 		log.Sugar().Info("STREAM_CONCURRENCY must be greater than 0, defaulting to 4")
