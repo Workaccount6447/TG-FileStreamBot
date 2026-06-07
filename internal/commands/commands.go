@@ -14,12 +14,6 @@ type command struct {
 	client *gotgproto.Client
 }
 
-// dispatcherIfaceType is the reflect.Type of the dispatcher.Dispatcher interface.
-// reflect.TypeOf((*dispatcher.Dispatcher)(nil)).Elem() is the correct way to get
-// an interface type for use with Type.Implements() — passing a concrete value to
-// reflect.TypeOf gives a concrete type, not an interface, which panics in Implements.
-var dispatcherIfaceType = reflect.TypeOf((*dispatcher.Dispatcher)(nil)).Elem()
-
 func Load(log *zap.Logger, d dispatcher.Dispatcher, client *gotgproto.Client) {
 	log = log.Named("commands")
 	defer log.Info("Initialized all command handlers")
@@ -31,24 +25,19 @@ func Load(log *zap.Logger, d dispatcher.Dispatcher, client *gotgproto.Client) {
 	for i := 0; i < cmdType.NumMethod(); i++ {
 		method := cmdType.Method(i)
 
-		// Only call methods whose name starts with "Load"
+		// Only call methods whose name starts with "Load" — all others are
+		// helper/callback methods with different signatures that must not be called here.
 		if !strings.HasPrefix(method.Name, "Load") {
 			continue
 		}
 
-		// Verify signature: receiver(*command) + exactly 1 arg that satisfies dispatcher.Dispatcher
-		// method.Type.In(0) = *command (receiver)
-		// method.Type.In(1) = first argument
-		mt := method.Type
-		if mt.NumIn() != 2 {
-			continue
-		}
-		argType := mt.In(1)
-		// argType must either BE the interface or implement it
-		if argType != dispatcherIfaceType && !argType.Implements(dispatcherIfaceType) {
+		// Guard: method must take exactly 2 inputs (receiver + dispatcher arg).
+		// This prevents calling any Load* method that happens to have a different signature.
+		if method.Type.NumIn() != 2 {
 			continue
 		}
 
+		// Safe call — we know the signature is (receiver, dispatcher.Dispatcher)
 		method.Func.Call([]reflect.Value{cmdValue, dispatcherValue})
 	}
 }
