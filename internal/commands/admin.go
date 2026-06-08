@@ -118,14 +118,14 @@ func banUser(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 	if err != nil {
-		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("**something went wrong: %s**", err.Error())), nil)
+		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("something went wrong: %s", err.Error())), nil)
 		return dispatcher.EndGroups
 	}
 	_ = db.DeleteUser(bgCtx, targetID)
 
 	ctx.Raw.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
 		Peer:     &tg.InputPeerUser{UserID: targetID},
-		Message:  "**Your Banned to Use The Bot**",
+		Message:  "Yᴏᴜ ᴀʀᴇ ʙᴀɴɴᴇᴅ ꜰʀᴏᴍ ᴜsɪɴɢ ᴛʜɪs ʙᴏᴛ.",
 		RandomID: rand.Int63(),
 	})
 
@@ -153,13 +153,13 @@ func unbanUser(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 	if err != nil {
-		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("**something went wrong: %s**", err.Error())), nil)
+		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("something went wrong: %s", err.Error())), nil)
 		return dispatcher.EndGroups
 	}
 
 	ctx.Raw.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
 		Peer:     &tg.InputPeerUser{UserID: targetID},
-		Message:  "**Your Unbanned now You can use The Bot**",
+		Message:  "Yᴏᴜ ᴀʀᴇ ᴜɴʙᴀɴɴᴇᴅ. Yᴏᴜ ᴄᴀɴ ᴜsᴇ ᴛʜɪs ʙᴏᴛ ɴᴏᴡ.",
 		RandomID: rand.Int63(),
 	})
 
@@ -178,7 +178,10 @@ func status(ctx *ext.Context, u *ext.Update) error {
 	bannedUsers, _ := db.TotalBanned(bgCtx)
 	totalLinks, _ := db.TotalLinks(bgCtx)
 	text := fmt.Sprintf(
-		"**Total Users in DB:** `%d`\n**Banned Users in DB:** `%d`\n**Total Links Generated:** `%d`",
+		"**📊 Bᴏᴛ Sᴛᴀᴛᴜs**\n\n"+
+			"**👥 Tᴏᴛᴀʟ Usᴇʀs :** `%d`\n"+
+			"**🚫 Bᴀɴɴᴇᴅ Usᴇʀs :** `%d`\n"+
+			"**🔗 Lɪɴᴋs Gᴇɴᴇʀᴀᴛᴇᴅ :** `%d`",
 		totalUsers, bannedUsers, totalLinks,
 	)
 	ctx.Reply(u, ext.ReplyTextString(text), nil)
