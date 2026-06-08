@@ -78,7 +78,7 @@ func (m *command) start(ctx *ext.Context, u *ext.Update) error {
 	if database.IsEnabled() {
 		if database.GetDB().IsUserBanned(bgCtx, chatId) {
 			ctx.Reply(u, ext.ReplyTextString(
-				fmt.Sprintf("__Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.__\n\n**[Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ](%s) Tʜᴇʏ Wɪʟʟ Hᴇʟᴘ Yᴏᴜ**", getUpdatesURL()),
+				fmt.Sprintf("Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.\n\n[Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ](%s) Tʜᴇʏ Wɪʟʟ Hᴇʟᴘ Yᴏᴜ", getUpdatesURL()),
 			), nil)
 			return dispatcher.EndGroups
 		}
@@ -114,10 +114,10 @@ func (m *command) start(ctx *ext.Context, u *ext.Update) error {
 	}
 
 	welcomeText := fmt.Sprintf(
-		"**👋 Hᴇʏ, %s**\n \n"+
+		"**👋 Hᴇʏ, %s**\n\n"+
 			"**I'ᴍ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇs sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ ᴀs ᴡᴇʟʟ ᴅɪʀᴇᴄᴛ ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴏʀ**\n\n"+
 			"**ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ**\n"+
-			"> **‣ 💥Fᴀsᴛ ᴀs ᴀ ʀᴏᴄᴋᴇᴛ🚀 ᴀɴᴅ ғᴇᴇʟɪɴɢ ᴀs ᴀ ᴋɪɴɢ👑 sᴜᴄʜ ᴛʜᴀᴛ ᴍᴀᴅᴇ ʙʏ \n> [ʀᴏʏᴀʟɪᴛʏ ʙᴏᴛꜱ👑](%s)**",
+			"> **‣ 💥Fᴀsᴛ ᴀs ᴀ ʀᴏᴄᴋᴇᴛ🚀 ᴀɴᴅ ғᴇᴇʟɪɴɢ ᴀs ᴀ ᴋɪɴɢ👑 ᴍᴀᴅᴇ ʙʏ [ʀᴏʏᴀʟɪᴛʏ ʙᴏᴛꜱ👑](%s)**",
 		firstName,
 		getUpdatesURL(),
 	)
@@ -131,31 +131,31 @@ func (m *command) start(ctx *ext.Context, u *ext.Update) error {
 func (m *command) handleFileDeepLink(ctx *ext.Context, u *ext.Update, payload string, chatId int64) error {
 	parts := strings.SplitN(payload, "_", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		ctx.Reply(u, ext.ReplyTextString("**Invalid Command**"), nil)
+		ctx.Reply(u, ext.ReplyTextString("Invalid Command"), nil)
 		return dispatcher.EndGroups
 	}
 	messageID, err := strconv.Atoi(parts[0])
 	if err != nil || messageID == 0 {
-		ctx.Reply(u, ext.ReplyTextString("**Invalid Command**"), nil)
+		ctx.Reply(u, ext.ReplyTextString("Invalid Command"), nil)
 		return dispatcher.EndGroups
 	}
 	shortHash := parts[1]
 
 	file, err := utils.FileFromMessage(context.Background(), m.client, messageID)
 	if err != nil {
-		ctx.Reply(u, ext.ReplyTextString("**File Not Found**"), nil)
+		ctx.Reply(u, ext.ReplyTextString("File Not Found"), nil)
 		return dispatcher.EndGroups
 	}
 
 	expectedHash := utils.PackFile(file.FileName, file.FileSize, file.MimeType, file.ID)
 	if !utils.CheckHash(shortHash, expectedHash) {
-		ctx.Reply(u, ext.ReplyTextString("**File Not Found**"), nil)
+		ctx.Reply(u, ext.ReplyTextString("File Not Found"), nil)
 		return dispatcher.EndGroups
 	}
 
 	tgMsg, err := utils.GetTGMessage(context.Background(), m.client, messageID)
 	if err != nil {
-		ctx.Reply(u, ext.ReplyTextString("**File Not Found**"), nil)
+		ctx.Reply(u, ext.ReplyTextString("File Not Found"), nil)
 		return dispatcher.EndGroups
 	}
 
@@ -164,7 +164,7 @@ func (m *command) handleFileDeepLink(ctx *ext.Context, u *ext.Update, payload st
 	case *tg.MessageMediaDocument:
 		doc, ok := media.Document.AsNotEmpty()
 		if !ok {
-			ctx.Reply(u, ext.ReplyTextString("**File Not Found**"), nil)
+			ctx.Reply(u, ext.ReplyTextString("File Not Found"), nil)
 			return dispatcher.EndGroups
 		}
 		inputMedia = &tg.InputMediaDocument{
@@ -177,7 +177,7 @@ func (m *command) handleFileDeepLink(ctx *ext.Context, u *ext.Update, payload st
 	case *tg.MessageMediaPhoto:
 		photo, ok := media.Photo.AsNotEmpty()
 		if !ok {
-			ctx.Reply(u, ext.ReplyTextString("**File Not Found**"), nil)
+			ctx.Reply(u, ext.ReplyTextString("File Not Found"), nil)
 			return dispatcher.EndGroups
 		}
 		inputMedia = &tg.InputMediaPhoto{
@@ -205,7 +205,7 @@ func (m *command) handleFileDeepLink(ctx *ext.Context, u *ext.Update, payload st
 	sentUpdates, sendErr := ctx.Raw.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
 		Peer:     &tg.InputPeerUser{UserID: chatId},
 		Media:    inputMedia,
-		Message:  fmt.Sprintf("**%s**", file.FileName),
+		Message:  file.FileName,
 		RandomID: rand.Int63(),
 	})
 	if sendErr != nil {
@@ -325,10 +325,10 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 	switch data {
 	case "home":
 		welcomeText := fmt.Sprintf(
-			"**👋 Hᴇʏ, %s**\n \n"+
+			"**👋 Hᴇʏ, %s**\n\n"+
 				"**I'ᴍ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇs sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ ᴀs ᴡᴇʟʟ ᴅɪʀᴇᴄᴛ ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴏʀ**\n\n"+
 				"**ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ**\n"+
-				"> **‣ 💥Fᴀsᴛ ᴀs ᴀ ʀᴏᴄᴋᴇᴛ🚀 ᴀɴᴅ ғᴇᴇʟɪɴɢ ᴀs ᴀ ᴋɪɴɢ👑 sᴜᴄʜ ᴛʜᴀᴛ ᴍᴀᴅᴇ ʙʏ \n> [ʀᴏʏᴀʟɪᴛʏ ʙᴏᴛꜱ👑](%s)**",
+				"> **‣ 💥Fᴀsᴛ ᴀs ᴀ ʀᴏᴄᴋᴇᴛ🚀 ᴀɴᴅ ғᴇᴇʟɪɴɢ ᴀs ᴀ ᴋɪɴɢ👑 ᴍᴀᴅᴇ ʙʏ [ʀᴏʏᴀʟɪᴛʏ ʙᴏᴛꜱ👑](%s)**",
 			firstName, getUpdatesURL(),
 		)
 		if u.CallbackQuery != nil {
