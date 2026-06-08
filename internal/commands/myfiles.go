@@ -74,8 +74,6 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	shareLink := fmt.Sprintf("https://t.me/%s?start=file_%d_%s", botUsername, f.MessageID, f.Hash)
 
 	isVideo := strings.Contains(f.MimeType, "video")
-	// FIX Bug D: isAudio and isPDF were declared but only used via isMedia,
-	// causing a compile error. Now computed inline inside isMedia directly.
 	isMedia := isVideo ||
 		strings.Contains(f.MimeType, "audio") ||
 		strings.Contains(f.MimeType, "pdf")
@@ -83,11 +81,11 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	humanSize := humanize.IBytes(uint64(f.FileSize))
 	emoji := fileEmoji(f.MimeType, f.FileName)
 
-	// ── Card text ──────────────────────────────────────────────────────────
+	// ── Card text — clean, no markdown signs ─────────────────────────────
 	var cardText string
 	if isMedia {
 		cardText = fmt.Sprintf(
-			"<i><u>%s Yᴏᴜʀ Fɪʟᴇ</u></i>\n\n"+
+			"__**%s Yᴏᴜʀ Fɪʟᴇ**__\n\n"+
 				"**📂 Nᴀᴍᴇ :** **%s**\n\n"+
 				"**📦 Sɪᴢᴇ :** `%s`\n\n"+
 				"**📥 Dᴏᴡɴʟᴏᴀᴅ :**\n`%s`\n\n"+
@@ -100,7 +98,7 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 		)
 	} else {
 		cardText = fmt.Sprintf(
-			"<i><u>%s Yᴏᴜʀ Fɪʟᴇ</u></i>\n\n"+
+			"__**%s Yᴏᴜʀ Fɪʟᴇ**__\n\n"+
 				"**📂 Nᴀᴍᴇ :** **%s**\n\n"+
 				"**📦 Sɪᴢᴇ :** `%s`\n\n"+
 				"**📥 Dᴏᴡɴʟᴏᴀᴅ :**\n`%s`\n\n"+
@@ -132,10 +130,6 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	}}
 
 	// ── Pagination row ────────────────────────────────────────────────────
-	// First page only  → [Nᴇxᴛ ▶]
-	// Middle page      → [◀ Pʀᴇᴠɪᴏᴜs | Nᴇxᴛ ▶]
-	// Last page only   → [◀ Pʀᴇᴠɪᴏᴜs]
-	// Single page      → (no nav row)
 	isFirst := page == 0
 	isLast := page >= totalPages-1
 	var navButtons []tg.KeyboardButtonClass
@@ -160,7 +154,6 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	if len(navButtons) > 0 {
 		rows = append(rows, tg.KeyboardButtonRow{Buttons: navButtons})
 	}
-	// Only add updates channel button if UPDATES_CHANNEL is configured
 	if config.ValueOf.UpdatesChannel != "" {
 		rows = append(rows, tg.KeyboardButtonRow{Buttons: []tg.KeyboardButtonClass{
 			&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
@@ -169,10 +162,6 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	markup := &tg.ReplyInlineMarkup{Rows: rows}
 
 	if isEdit {
-		// Editing a message that may have media — use NoWebpage flag to avoid
-		// Telegram trying to re-embed a link preview on edit.
-		// msgEditID is passed explicitly because in callback updates
-		// u.EffectiveMessage is nil — the message ID comes from CallbackQuery.MsgID.
 		ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 			Peer:        &tg.InputPeerUser{UserID: userID},
 			ID:          msgEditID,
@@ -184,7 +173,6 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	}
 
 	// First send: try to attach the actual file thumbnail from the log channel
-	// so the user sees the image/thumbnail alongside the text card.
 	sent := false
 	if config.ValueOf.LogChannelID != 0 {
 		tgMsg, fetchErr := m.getLogMessage(ctx, f.MessageID)
@@ -226,7 +214,6 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 		}
 	}
 	if !sent {
-		// Fallback: text-only card
 		ctx.Reply(u, ext.ReplyTextString(cardText), &ext.ReplyOpts{Markup: markup})
 	}
 
@@ -255,8 +242,6 @@ func fileEmoji(mimeType, fileName string) string {
 }
 
 // getLogMessage fetches a single message from the log channel by its ID.
-// It is a method on *command so it has access to ctx without passing it as a
-// plain function parameter (avoids the unused-variable compile error).
 func (m *command) getLogMessage(ctx *ext.Context, messageID int) (*tg.Message, error) {
 	channel, err := m.getLogChannelInput(ctx)
 	if err != nil {
@@ -320,12 +305,10 @@ func (m *command) myFilesPageCallback(ctx *ext.Context, u *ext.Update, pageStr s
 
 	userID := u.EffectiveChat().GetID()
 
-	// Answer immediately to remove the Telegram loading spinner
 	ctx.AnswerCallback(&tg.MessagesSetBotCallbackAnswerRequest{
 		QueryID: u.CallbackQuery.QueryID,
 	})
 
-	// u.EffectiveMessage is nil for callback updates — get message ID from CallbackQuery
 	msgID := u.CallbackQuery.MsgID
 	return m.sendFileCard(ctx, u, userID, page, true, msgID)
 }
