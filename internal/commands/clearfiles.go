@@ -58,9 +58,9 @@ func (m *command) clearFiles(ctx *ext.Context, u *ext.Update) error {
 
 	// Step 1: show confirmation
 	confirmText := fmt.Sprintf(
-		"⚠️ **Aʀᴇ ʏᴏᴜ sᴜʀᴇ?**\n\n"+
-			"This will permanently delete all **%d file(s)** from your history.\n"+
-			"Stream links will **stop working**.\n\n"+
+		"⚠️ Aʀᴇ ʏᴏᴜ sᴜʀᴇ?\n\n"+
+			"This will permanently delete all %d file(s) from your history.\n"+
+			"Stream links will stop working.\n\n"+
 			"_This cannot be undone._",
 		total,
 	)
@@ -100,12 +100,12 @@ func (m *command) clearFilesCallback(ctx *ext.Context, u *ext.Update, action str
 		deleted, err := database.GetDB().DeleteUserFiles(context.Background(), userID)
 		var resultText string
 		if err != nil {
-			resultText = fmt.Sprintf("❌ **Something went wrong:** `%s`", err.Error())
+			resultText = fmt.Sprintf("❌ Something went wrong: `%s`", err.Error())
 		} else if deleted == 0 {
-			resultText = "**ɴᴏ ꜰɪʟᴇs ꜰᴏᴜɴᴅ ᴛᴏ ᴅᴇʟᴇᴛᴇ.**"
+			resultText = "ɴᴏ ꜰɪʟᴇs ꜰᴏᴜɴᴅ ᴛᴏ ᴅᴇʟᴇᴛᴇ."
 		} else {
 			resultText = fmt.Sprintf(
-				"✅ **Dᴏɴᴇ!**\n\n"+
+				"✅ Dᴏɴᴇ!\n\n"+
 					"`%d` ꜰɪʟᴇ(s) ʜᴀᴠᴇ ʙᴇᴇɴ ʀᴇᴍᴏᴠᴇᴅ ꜰʀᴏᴍ ʏᴏᴜʀ ʜɪsᴛᴏʀʏ.\n\n"+
 					"_Aʟʟ sᴛʀᴇᴀᴍ ʟɪɴᴋs ꜰᴏʀ ᴛʜᴇsᴇ ꜰɪʟᴇs ᴀʀᴇ ɴᴏᴡ ɪɴᴠᴀʟɪᴅ._",
 				deleted,
@@ -125,7 +125,7 @@ func (m *command) clearFilesCallback(ctx *ext.Context, u *ext.Update, action str
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: userID},
 				ID:          u.CallbackQuery.MsgID,
-				Message:     "**Cᴀɴᴄᴇʟʟᴇᴅ.** Yᴏᴜʀ ꜰɪʟᴇs ᴀʀᴇ sᴀꜰᴇ. ✅",
+				Message:     "Cᴀɴᴄᴇʟʟᴇᴅ. Yᴏᴜʀ ꜰɪʟᴇs ᴀʀᴇ sᴀꜰᴇ. ✅",
 				ReplyMarkup: &tg.ReplyInlineMarkup{},
 			})
 		}
