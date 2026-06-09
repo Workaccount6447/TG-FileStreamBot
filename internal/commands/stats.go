@@ -7,12 +7,10 @@ package commands
 //   • Total storage used across all files
 //   • Total stream links generated (from users.links counter)
 //   • Most recent file name + upload date
-//   • Account join date
 
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"EverythingSuckz/fsb/internal/database"
 
@@ -71,37 +69,8 @@ func (m *command) userStats(ctx *ext.Context, u *ext.Update) error {
 		)
 	}
 
-	// ── Join date ──────────────────────────────────────────────────────────
-	joinLine := "__ᴜɴᴋɴᴏᴡɴ__"
-	if !stats.JoinDate.IsZero() {
-		joinLine = stats.JoinDate.Format("02 Jan 2006")
-	}
-
-	// ── Account age ───────────────────────────────────────────────────────
-	ageLine := ""
-	if !stats.JoinDate.IsZero() {
-		days := int(time.Since(stats.JoinDate).Hours() / 24)
-		switch {
-		case days == 0:
-			ageLine = "joined today"
-		case days == 1:
-			ageLine = "1 day ago"
-		default:
-			ageLine = fmt.Sprintf("%d days ago", days)
-		}
-	}
-
 	text := fmt.Sprintf(
 		"**📊 Yᴏᴜʀ Sᴛᴀᴛs**\n\n"+
-			"**👤 Aᴄᴄᴏᴜɴᴛ**\n"+
-			"  ⬩ Jᴏɪɴᴇᴅ : `%s`",
-		joinLine,
-	)
-	if ageLine != "" {
-		text += fmt.Sprintf(" _(%s)_", ageLine)
-	}
-	text += fmt.Sprintf(
-		"\n\n"+
 			"**📁 Fɪʟᴇs**\n"+
 			"  ⬩ Tᴏᴛᴀʟ ᴜᴘʟᴏᴀᴅᴇᴅ : `%d`\n"+
 			"  ⬩ Tᴏᴛᴀʟ sɪᴢᴇ       : `%s`\n"+
