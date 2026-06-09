@@ -17,9 +17,8 @@ var ErrUserAlreadyBanned = errors.New("user already banned")
 var ErrUserNotBanned = errors.New("user not banned")
 
 type User struct {
-	ID       int64     `bson:"id"`
-	JoinDate time.Time `bson:"join_date"`
-	Links    int64     `bson:"links"`
+	ID    int64 `bson:"id"`
+	Links int64 `bson:"links"`
 }
 
 type BannedUser struct {
@@ -108,6 +107,9 @@ func Init(uri string) error {
 		Options: options.Index().SetBackground(true),
 	})
 
+	// Drop legacy join_date field from all existing user documents
+	instance.MigrateDropJoinDate(context.Background())
+
 	return nil
 }
 
@@ -117,7 +119,7 @@ func GetDB() *DB       { return instance }
 // ---- User Management ----
 
 func (d *DB) AddUser(ctx context.Context, id int64) error {
-	user := User{ID: id, JoinDate: time.Now(), Links: 0}
+	user := User{ID: id, Links: 0}
 	_, err := d.users.InsertOne(ctx, user)
 	return err
 }
@@ -247,11 +249,10 @@ func (d *DB) DeleteUserFiles(ctx context.Context, userID int64) (int64, error) {
 
 // UserStats holds the personal statistics shown by /stats.
 type UserStats struct {
-	TotalFiles   int64
-	TotalSize    int64
-	LinksCount   int64
-	JoinDate     time.Time
-	NewestFile   *FileLink
+	TotalFiles  int64
+	TotalSize   int64
+	LinksCount  int64
+	NewestFile  *FileLink
 }
 
 // GetUserStats aggregates personal stats for a single user.
@@ -297,10 +298,8 @@ func (d *DB) GetUserStats(ctx context.Context, userID int64) (*UserStats, error)
 
 	// User join date + link count
 	user, err := d.GetUser(ctx, userID)
-	var joinDate time.Time
 	var linksCount int64
 	if err == nil {
-		joinDate = user.JoinDate
 		linksCount = user.Links
 	}
 
@@ -308,7 +307,16 @@ func (d *DB) GetUserStats(ctx context.Context, userID int64) (*UserStats, error)
 		TotalFiles: totalFiles,
 		TotalSize:  totalSize,
 		LinksCount: linksCount,
-		JoinDate:   joinDate,
 		NewestFile: newestPtr,
 	}, nil
+}
+
+// MigrateDropJoinDate removes the legacy join_date field from all user documents.
+// Safe to call on every startup — unset on a field that doesn't exist is a no-op.
+func (d *DB) MigrateDropJoinDate(ctx context.Context) {
+	d.users.UpdateMany(
+		ctx,
+		bson.M{"join_date": bson.M{"$exists": true}},
+		bson.M{"$unset": bson.M{"join_date": ""}},
+	)
 }
