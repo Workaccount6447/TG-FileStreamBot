@@ -63,7 +63,13 @@ func getStreamRoute(ctx *gin.Context) {
 		return
 	}
 
-	// for photo messages
+	// Determine disposition early so it applies to photos too
+	disposition := "inline"
+	if ctx.Query("d") == "true" {
+		disposition = "attachment"
+	}
+
+	// for photo messages (FileSize == 0 from the MTProto photo object)
 	if file.FileSize == 0 {
 		res, err := worker.Client.API().UploadGetFile(ctx, &tg.UploadGetFileRequest{
 			Location: file.Location,
@@ -80,7 +86,7 @@ func getStreamRoute(ctx *gin.Context) {
 			return
 		}
 		fileBytes := result.GetBytes()
-		ctx.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", file.FileName))
+		ctx.Header("Content-Disposition", fmt.Sprintf("%s; filename=\"%s\"", disposition, file.FileName))
 		if r.Method != "HEAD" {
 			ctx.Data(http.StatusOK, file.MimeType, fileBytes)
 		}
@@ -117,13 +123,6 @@ func getStreamRoute(ctx *gin.Context) {
 
 	ctx.Header("Content-Type", mimeType)
 	ctx.Header("Content-Length", strconv.FormatInt(contentLength, 10))
-
-	disposition := "inline"
-
-	if ctx.Query("d") == "true" {
-		disposition = "attachment"
-	}
-
 	ctx.Header("Content-Disposition", fmt.Sprintf("%s; filename=\"%s\"", disposition, file.FileName))
 
 	if r.Method != "HEAD" {
