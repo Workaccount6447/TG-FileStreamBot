@@ -144,11 +144,11 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		strings.Contains(file.MimeType, "audio") ||
 		strings.Contains(file.MimeType, "pdf")
 
-	// ── Reply text — matches Python FileStreamBot STREAM_TEXT / STREAM_TEXT_X ──
+	// ── Reply text — clean, no markdown signs ────────────────────────────
 	var replyText string
 	if isMedia {
 		replyText = fmt.Sprintf(
-			"<i><u>𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !</u></i>\n\n"+
+			"__**𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !**__\n\n"+
 				"**📂 Fɪʟᴇ ɴᴀᴍᴇ :** **%s**\n\n"+
 				"**📦 Fɪʟᴇ ꜱɪᴢᴇ :** `%s`\n\n"+
 				"**📥 Dᴏᴡɴʟᴏᴀᴅ :** `%s`\n\n"+
@@ -159,7 +159,7 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		)
 	} else {
 		replyText = fmt.Sprintf(
-			"<i><u>𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !</u></i>\n\n"+
+			"__**𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !**__\n\n"+
 				"**📂 Fɪʟᴇ ɴᴀᴍᴇ :** **%s**\n\n"+
 				"**📦 Fɪʟᴇ ꜱɪᴢᴇ :** `%s`\n\n"+
 				"**📥 Dᴏᴡɴʟᴏᴀᴅ :** `%s`\n\n"+
@@ -169,7 +169,7 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		)
 	}
 
-	// ── Inline buttons — matches Python FileStreamBot button layout ──
+	// ── Inline buttons ────────────────────────────────────────────────────
 	var rows []tg.KeyboardButtonRow
 	if isVideo {
 		// Video: Stream + Download on row 1
