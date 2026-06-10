@@ -14,6 +14,7 @@ import (
 	"github.com/celestix/gotgproto/dispatcher"
 	"github.com/celestix/gotgproto/dispatcher/handlers"
 	"github.com/celestix/gotgproto/ext"
+	"github.com/gotd/td/telegram/message/styling"
 	"github.com/gotd/td/tg"
 )
 
@@ -49,17 +50,9 @@ func (m *command) LoadAdmin(d dispatcher.Dispatcher) {
 	d.AddHandler(handlers.NewCommand("broadcast", ownerOnly(m.broadcast)))
 }
 
-// resolveTargetID extracts the target user ID from either:
-//   a) the first argument:  /ban 123456789
-//   b) the replied-to message sender: /ban (as a reply)
-//
-// gotgproto's types.Message embeds *tg.Message — the sender is in
-// tg.Message.FromID which is a tg.PeerClass (specifically *tg.PeerUser).
-// There is no .From field — that was the compile error.
 func resolveTargetID(u *ext.Update) (targetID int64, display string, errMsg string) {
 	parts := strings.Fields(u.EffectiveMessage.Text)
 
-	// Case A: explicit numeric argument
 	if len(parts) >= 2 {
 		id, err := strconv.ParseInt(parts[1], 10, 64)
 		if err != nil {
@@ -68,13 +61,11 @@ func resolveTargetID(u *ext.Update) (targetID int64, display string, errMsg stri
 		return id, fmt.Sprintf("`%d`", id), ""
 	}
 
-	// Case B: reply to a message — extract sender from tg.Message.FromID
 	reply := u.EffectiveMessage.ReplyToMessage
 	if reply != nil && reply.Message != nil {
 		fromID := reply.Message.FromID
 		if peerUser, ok := fromID.(*tg.PeerUser); ok {
 			id := peerUser.UserID
-			// Try to get the user's name from Entities if available
 			name := fmt.Sprintf("%d", id)
 			if u.Entities != nil {
 				if tgUser, exists := u.Entities.Users[id]; exists {
@@ -93,7 +84,6 @@ func resolveTargetID(u *ext.Update) (targetID int64, display string, errMsg stri
 	return 0, "", "Usage: `/ban <user_id>` or reply to a user's message with `/ban`"
 }
 
-// /ban <user_id>  OR  /ban (reply)
 func banUser(ctx *ext.Context, u *ext.Update) error {
 	if !requireDB(ctx, u) {
 		return dispatcher.EndGroups
@@ -114,7 +104,10 @@ func banUser(ctx *ext.Context, u *ext.Update) error {
 	bgCtx := context.Background()
 	err := db.BanUser(bgCtx, targetID)
 	if err == database.ErrUserAlreadyBanned {
-		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("%s **is Already Banned**", displayName)), nil)
+		ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
+			styling.Plain(displayName + " "),
+			styling.Bold("is Already Banned"),
+		}), nil)
 		return dispatcher.EndGroups
 	}
 	if err != nil {
@@ -129,11 +122,13 @@ func banUser(ctx *ext.Context, u *ext.Update) error {
 		RandomID: rand.Int63(),
 	})
 
-	ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("%s **is Banned** ✅", displayName)), nil)
+	ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
+		styling.Plain(displayName + " "),
+		styling.Bold("is Banned ✅"),
+	}), nil)
 	return dispatcher.EndGroups
 }
 
-// /unban <user_id>  OR  /unban (reply)
 func unbanUser(ctx *ext.Context, u *ext.Update) error {
 	if !requireDB(ctx, u) {
 		return dispatcher.EndGroups
@@ -149,7 +144,10 @@ func unbanUser(ctx *ext.Context, u *ext.Update) error {
 	bgCtx := context.Background()
 	err := db.UnbanUser(bgCtx, targetID)
 	if err == database.ErrUserNotBanned {
-		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("%s **is not Banned**", displayName)), nil)
+		ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
+			styling.Plain(displayName + " "),
+			styling.Bold("is not Banned"),
+		}), nil)
 		return dispatcher.EndGroups
 	}
 	if err != nil {
@@ -163,11 +161,14 @@ func unbanUser(ctx *ext.Context, u *ext.Update) error {
 		RandomID: rand.Int63(),
 	})
 
-	ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("%s **is Unbanned** ✅", displayName)), nil)
+	ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
+		styling.Plain(displayName + " "),
+		styling.Bold("is Unbanned ✅"),
+	}), nil)
 	return dispatcher.EndGroups
 }
 
-// /status
+// /status — owner-only bot stats
 func status(ctx *ext.Context, u *ext.Update) error {
 	if !requireDB(ctx, u) {
 		return dispatcher.EndGroups
@@ -177,18 +178,17 @@ func status(ctx *ext.Context, u *ext.Update) error {
 	totalUsers, _ := db.TotalUsers(bgCtx)
 	bannedUsers, _ := db.TotalBanned(bgCtx)
 	totalLinks, _ := db.TotalLinks(bgCtx)
-	text := fmt.Sprintf(
-		"**📊 Bᴏᴛ Sᴛᴀᴛᴜs**\n\n"+
-			"**👥 Tᴏᴛᴀʟ Usᴇʀs :** `%d`\n"+
-			"**🚫 Bᴀɴɴᴇᴅ Usᴇʀs :** `%d`\n"+
-			"**🔗 Lɪɴᴋs Gᴇɴᴇʀᴀᴛᴇᴅ :** `%d`",
-		totalUsers, bannedUsers, totalLinks,
-	)
-	ctx.Reply(u, ext.ReplyTextString(text), nil)
+
+	parts := []styling.StyledTextOption{
+		styling.Bold("📊 Bᴏᴛ Sᴛᴀᴛᴜs\n\n"),
+		styling.Bold("👥 Tᴏᴛᴀʟ Usᴇʀs : "), styling.Code(fmt.Sprintf("%d", totalUsers)), styling.Plain("\n"),
+		styling.Bold("🚫 Bᴀɴɴᴇᴅ Usᴇʀs : "), styling.Code(fmt.Sprintf("%d", bannedUsers)), styling.Plain("\n"),
+		styling.Bold("🔗 Lɪɴᴋs Gᴇɴᴇʀᴀᴛᴇᴅ : "), styling.Code(fmt.Sprintf("%d", totalLinks)),
+	}
+	ctx.Reply(u, ext.ReplyTextStyledTextArray(parts), nil)
 	return dispatcher.EndGroups
 }
 
-// /broadcast — reply to any message (text, photo, video, sticker, etc.)
 func (m *command) broadcast(ctx *ext.Context, u *ext.Update) error {
 	if !requireDB(ctx, u) {
 		return dispatcher.EndGroups
