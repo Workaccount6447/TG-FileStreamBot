@@ -86,9 +86,13 @@ func getStreamRoute(ctx *gin.Context) {
 			return
 		}
 		fileBytes := result.GetBytes()
+		photoMime := file.MimeType
+		if disposition == "attachment" {
+			photoMime = "application/octet-stream"
+		}
 		ctx.Header("Content-Disposition", fmt.Sprintf("%s; filename=\"%s\"", disposition, file.FileName))
 		if r.Method != "HEAD" {
-			ctx.Data(http.StatusOK, file.MimeType, fileBytes)
+			ctx.Data(http.StatusOK, photoMime, fileBytes)
 		}
 		return
 	}
@@ -117,7 +121,11 @@ func getStreamRoute(ctx *gin.Context) {
 	contentLength := end - start + 1
 	mimeType := file.MimeType
 
-	if mimeType == "" {
+	if mimeType == "" || disposition == "attachment" {
+		// Force octet-stream on downloads so browsers never try to preview the file.
+		// When disposition == "attachment" we always override the MIME type — a browser
+		// that receives Content-Type: video/mp4 + Content-Disposition: attachment will
+		// still open its built-in video player instead of saving the file.
 		mimeType = "application/octet-stream"
 	}
 
