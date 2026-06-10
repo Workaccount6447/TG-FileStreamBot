@@ -53,14 +53,22 @@ func startMarkup() *tg.ReplyInlineMarkup {
 			&tg.KeyboardButtonCallback{Text: "ᴅᴏɴᴀᴛᴇ ⭐", Data: []byte("donate")},
 		}},
 	}
-	// Only add the updates channel button if UPDATES_CHANNEL env var is set.
-	// An empty URL ("https://t.me/") is rejected by Telegram.
 	if config.ValueOf.UpdatesChannel != "" {
 		rows = append(rows, tg.KeyboardButtonRow{Buttons: []tg.KeyboardButtonClass{
 			&tg.KeyboardButtonURL{Text: "📢 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ", URL: getUpdatesURL()},
 		}})
 	}
 	return &tg.ReplyInlineMarkup{Rows: rows}
+}
+
+func welcomeMessage(firstName string) string {
+	return fmt.Sprintf(
+		"👋 Hᴇʏ, %s\n\n"+
+			"I'ᴍ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇs sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ ᴀs ᴡᴇʟʟ ᴅɪʀᴇᴄᴛ ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴏʀ\n\n"+
+			"ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ\n"+
+			"‣ 💥Fᴀsᴛ ᴀs ᴀ ʀᴏᴄᴋᴇᴛ🚀 ᴀɴᴅ ғᴇᴇʟɪɴɢ ᴀs ᴀ ᴋɪɴɢ👑",
+		firstName,
+	)
 }
 
 // ── /start ─────────────────────────────────────────────────────────────────
@@ -74,23 +82,20 @@ func (m *command) start(ctx *ext.Context, u *ext.Update) error {
 
 	bgCtx := context.Background()
 
-	// Ban check
 	if database.IsEnabled() {
 		if database.GetDB().IsUserBanned(bgCtx, chatId) {
 			ctx.Reply(u, ext.ReplyTextString(
-				fmt.Sprintf("Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.\n\n[Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ](%s) Tʜᴇʏ Wɪʟʟ Hᴇʟᴘ Yᴏᴜ", getUpdatesURL()),
+				fmt.Sprintf("Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.\n\nContact Developer: %s", getUpdatesURL()),
 			), nil)
 			return dispatcher.EndGroups
 		}
 	}
 
-	// Allowed-users check
 	if len(config.ValueOf.AllowedUsers) != 0 && !utils.Contains(config.ValueOf.AllowedUsers, chatId) {
 		ctx.Reply(u, ext.ReplyTextString("Yᴏᴜ ᴀʀᴇ ɴᴏᴛ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴛᴏ ᴜsᴇ ᴛʜɪs ʙᴏᴛ."), nil)
 		return dispatcher.EndGroups
 	}
 
-	// Register new user
 	if database.IsEnabled() {
 		db := database.GetDB()
 		if !db.UserExists(bgCtx, chatId) {
@@ -99,7 +104,6 @@ func (m *command) start(ctx *ext.Context, u *ext.Update) error {
 		}
 	}
 
-	// Deep-link handling — must be before the welcome message
 	text := u.EffectiveMessage.Text
 	if idx := strings.Index(text, " "); idx != -1 {
 		payload := text[idx+1:]
@@ -113,16 +117,7 @@ func (m *command) start(ctx *ext.Context, u *ext.Update) error {
 		firstName = user.FirstName
 	}
 
-	welcomeText := fmt.Sprintf(
-		"**👋 Hᴇʏ, %s**\n\n"+
-			"**I'ᴍ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇs sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ ᴀs ᴡᴇʟʟ ᴅɪʀᴇᴄᴛ ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴏʀ**\n\n"+
-			"**ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ**\n"+
-			"> **‣ 💥Fᴀsᴛ ᴀs ᴀ ʀᴏᴄᴋᴇᴛ🚀 ᴀɴᴅ ғᴇᴇʟɪɴɢ ᴀs ᴀ ᴋɪɴɢ👑 ᴍᴀᴅᴇ ʙʏ [ʀᴏʏᴀʟɪᴛʏ ʙᴏᴛꜱ👑](%s)**",
-		firstName,
-		getUpdatesURL(),
-	)
-
-	ctx.Reply(u, ext.ReplyTextString(welcomeText), &ext.ReplyOpts{Markup: startMarkup()})
+	ctx.Reply(u, ext.ReplyTextString(welcomeMessage(firstName)), &ext.ReplyOpts{Markup: startMarkup()})
 	return dispatcher.EndGroups
 }
 
@@ -213,9 +208,6 @@ func (m *command) handleFileDeepLink(ctx *ext.Context, u *ext.Update, payload st
 		return dispatcher.EndGroups
 	}
 
-	// Auto-delete after 1 hour.
-	// Use a fresh context from m.client so this goroutine is not tied to the
-	// handler's ctx which is invalidated as soon as the handler returns.
 	var sentMsgID int
 	if upd, ok := sentUpdates.(*tg.Updates); ok {
 		for _, update := range upd.Updates {
@@ -244,15 +236,10 @@ func (m *command) handleFileDeepLink(ctx *ext.Context, u *ext.Update, payload st
 }
 
 // ── Callback handler ───────────────────────────────────────────────────────
-// FIX Bug A+B: removed the phantom handleMyFilesCallback registration.
-// There is now exactly ONE CallbackQuery handler (m.handleCallback).
-// All callback routing — mf_page_, revoke_, home, help, about, donate, close
-// — is done inside that single function via prefix checks and a switch.
 
 func (m *command) LoadCallbacks(d dispatcher.Dispatcher) {
 	log := m.log.Named("callbacks")
 	defer log.Sugar().Info("Loaded")
-	// ONE handler only — routing is done inside handleCallback
 	d.AddHandler(handlers.NewCallbackQuery(nil, m.handleCallback))
 }
 
@@ -264,25 +251,19 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 
 	data := string(query.Data)
 
-	// ── /myfiles pagination (mf_page_<N>) ─────────────────────────────────
 	if strings.HasPrefix(data, "mf_page_") {
 		return m.myFilesPageCallback(ctx, u, strings.TrimPrefix(data, "mf_page_"))
 	}
 
-	// ── \/clearfiles confirmation (cf_confirm \/ cf_cancel) ─────────────────
 	if strings.HasPrefix(data, "cf_") {
 		return m.clearFilesCallback(ctx, u, strings.TrimPrefix(data, "cf_"))
 	}
 
-	// ── \/stats → My Files shortcut ────────────────────────────────────────
 	if data == "goto_myfiles" {
 		ctx.AnswerCallback(&tg.MessagesSetBotCallbackAnswerRequest{QueryID: query.QueryID})
 		return m.myFiles(ctx, u)
 	}
 
-	// ── Revoke file (revoke_<msgID>) ───────────────────────────────────────
-	// FIX Bug E: channel messages must be deleted with ChannelsDeleteMessages,
-	// not MessagesDeleteMessages — the latter only works for private chat messages.
 	if strings.HasPrefix(data, "revoke_") {
 		msgIDStr := strings.TrimPrefix(data, "revoke_")
 		msgID, err := strconv.Atoi(msgIDStr)
@@ -293,7 +274,6 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 			return dispatcher.EndGroups
 		}
 
-		// Delete from log channel using the correct RPC for channel messages
 		logChannel, chanErr := utils.GetLogChannelPeer(context.Background(), ctx.Raw, ctx.PeerStorage)
 		if chanErr == nil {
 			ctx.Raw.ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{
@@ -302,12 +282,11 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 			})
 		}
 
-		// Strip all buttons from the bot message and append a revoked notice
 		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: u.EffectiveChat().GetID()},
 				ID:          u.CallbackQuery.MsgID,
-				Message:     "~~ʟɪɴᴋ ʀᴇᴠᴏᴋᴇᴅ~~ ✅",
+				Message:     "Link Revoked ✅",
 				ReplyMarkup: &tg.ReplyInlineMarkup{},
 			})
 		}
@@ -324,18 +303,11 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 
 	switch data {
 	case "home":
-		welcomeText := fmt.Sprintf(
-			"**👋 Hᴇʏ, %s**\n\n"+
-				"**I'ᴍ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇs sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ ᴀs ᴡᴇʟʟ ᴅɪʀᴇᴄᴛ ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴏʀ**\n\n"+
-				"**ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ**\n"+
-				"> **‣ 💥Fᴀsᴛ ᴀs ᴀ ʀᴏᴄᴋᴇᴛ🚀 ᴀɴᴅ ғᴇᴇʟɪɴɢ ᴀs ᴀ ᴋɪɴɢ👑 ᴍᴀᴅᴇ ʙʏ [ʀᴏʏᴀʟɪᴛʏ ʙᴏᴛꜱ👑](%s)**",
-			firstName, getUpdatesURL(),
-		)
 		if u.CallbackQuery != nil {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:        &tg.InputPeerUser{UserID: u.EffectiveChat().GetID()},
 				ID:          u.CallbackQuery.MsgID,
-				Message:     welcomeText,
+				Message:     welcomeMessage(firstName),
 				ReplyMarkup: startMarkup(),
 			})
 		}
@@ -343,12 +315,12 @@ func (m *command) handleCallback(ctx *ext.Context, u *ext.Update) error {
 
 	case "help":
 		helpText := fmt.Sprintf(
-			"**Hᴏᴡ Tᴏ Usᴇ**\n\n"+
-				"• ᴀᴅᴅ ᴍᴇ ᴀs ᴀɴ ᴀᴅᴍɪɴ ᴏɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ\n"+
-				"• sᴇɴᴅ ᴍᴇ ᴀɴʏ ᴅᴏᴄᴜᴍᴇɴᴛ ᴏʀ ᴍᴇᴅɪᴀ\n"+
-				"• ɪ'ʟʟ ᴘʀᴏᴠɪᴅᴇ sᴛʀᴇᴀᴍᴀʙʟᴇ ʟɪɴᴋ\n\n"+
-				"🔞 ᴀᴅᴜʟᴛ ᴄᴏɴᴛᴇɴᴛ sᴛʀɪᴄᴛʟʏ ᴘʀᴏʜɪʙɪᴛᴇᴅ.\n\n"+
-				"ʀᴇᴘᴏʀᴛ ʙᴜɢs ᴛᴏ [ᴅᴇᴠᴇʟᴏᴘᴇʀ](%s)",
+			"How To Use\n\n"+
+				"• Add me as an admin on the channel\n"+
+				"• Send me any document or media\n"+
+				"• I'll provide a streamable link\n\n"+
+				"🔞 Adult content strictly prohibited.\n\n"+
+				"Report bugs to Developer: %s",
 			getUpdatesURL(),
 		)
 		helpRows := []tg.KeyboardButtonRow{
@@ -434,8 +406,8 @@ func (m *command) logNewUser(ctx *ext.Context, u *ext.Update, chatId int64) {
 		firstName = user.FirstName
 	}
 	logMsg := fmt.Sprintf(
-		"**#NᴇᴡUsᴇʀ**\n**⬩ ᴜsᴇʀ ɴᴀᴍᴇ :** [%s](tg://user?id=%d)\n**⬩ ᴜsᴇʀ ɪᴅ :** `%d`",
-		firstName, chatId, chatId,
+		"#NewUser\nUser Name : %s\nUser ID : %d",
+		firstName, chatId,
 	)
 	ulogChannelID := config.ValueOf.ULogChannelID
 	cachedPeer := ctx.PeerStorage.GetInputPeerById(ulogChannelID)
