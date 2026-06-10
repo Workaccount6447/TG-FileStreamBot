@@ -28,7 +28,6 @@ func Contains[T comparable](s []T, e T) bool {
 }
 
 // IsClientDisconnectError checks if the error is due to client disconnecting
-// e.g. user seeking in video, stopping playback, or network issues on client side
 func IsClientDisconnectError(err error) bool {
 	if err == nil {
 		return false
@@ -39,9 +38,6 @@ func IsClientDisconnectError(err error) bool {
 		strings.Contains(errStr, "broken pipe") ||
 		strings.Contains(errStr, "forcibly closed")
 }
-
-// telegram helper functions
-// TODO: move these to a separate package if they grow too large
 
 func GetTGMessage(ctx context.Context, client *gotgproto.Client, messageID int) (*tg.Message, error) {
 	inputMessageID := tg.InputMessageClass(&tg.InputMessageID{ID: messageID})
@@ -103,9 +99,27 @@ func FileFromMedia(media tg.MessageMediaClass) (*types.File, error) {
 		location.AccessHash = photo.GetAccessHash()
 		location.FileReference = photo.GetFileReference()
 		location.ThumbSize = size.GetType()
+
+		// Read the actual byte size from the PhotoSize object.
+		// tg.PhotoSize has a Size field (int); tg.PhotoSizeProgressive has Sizes []int.
+		// We use the largest available value so humanize shows the real file size.
+		var photoBytes int64
+		switch s := photoSize.(type) {
+		case *tg.PhotoSize:
+			photoBytes = int64(s.Size)
+		case *tg.PhotoSizeProgressive:
+			for _, v := range s.Sizes {
+				if int64(v) > photoBytes {
+					photoBytes = int64(v)
+				}
+			}
+		case *tg.PhotoCachedSize:
+			photoBytes = int64(len(s.Bytes))
+		}
+
 		return &types.File{
 			Location: location,
-			FileSize: 0, // caller should judge if this is a photo or not
+			FileSize: photoBytes,
 			FileName: fmt.Sprintf("photo_%d.jpg", photo.GetID()),
 			MimeType: "image/jpeg",
 			ID:       photo.GetID(),
@@ -171,7 +185,6 @@ func GetLogChannelPeer(ctx context.Context, api *tg.Client, peerStorage *storage
 	if !ok {
 		return nil, errors.New("type assertion to *tg.Channel failed")
 	}
-	// Bruh, I literally have to call library internal functions at this point
 	peerStorage.AddPeer(channel.GetID(), channel.AccessHash, storage.TypeChannel, "")
 	return channel.AsInput(), nil
 }
