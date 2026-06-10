@@ -13,8 +13,9 @@ import (
 	"github.com/celestix/gotgproto/dispatcher"
 	"github.com/celestix/gotgproto/dispatcher/handlers"
 	"github.com/celestix/gotgproto/ext"
-	"github.com/dustin/go-humanize"
 	"github.com/celestix/gotgproto/storage"
+	"github.com/dustin/go-humanize"
+	"github.com/gotd/td/telegram/message/styling"
 	"github.com/gotd/td/tg"
 )
 
@@ -35,31 +36,33 @@ func (m *command) myFiles(ctx *ext.Context, u *ext.Update) error {
 	}
 
 	if database.GetDB().IsUserBanned(context.Background(), chatId) {
-		ctx.Reply(u, ext.ReplyTextString(
-			fmt.Sprintf("__Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.__\n\n**[Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ](%s) Tʜᴇʏ Wɪʟʟ Hᴇʟᴘ Yᴏᴜ**", getUpdatesURL()),
-		), nil)
+		ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
+			styling.Italic("Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.\n\n"),
+			styling.TextURL("Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ", getUpdatesURL()),
+			styling.Bold(" Tʜᴇʏ Wɪʟʟ Hᴇʟᴘ Yᴏᴜ"),
+		}), nil)
 		return dispatcher.EndGroups
 	}
 
 	return m.sendFileCard(ctx, u, chatId, 0, false, 0)
 }
 
-// sendFileCard fetches page `page` for `userID` and either:
-//   - sends a new message  (isEdit=false) — used by /myfiles
-//   - edits existing message (isEdit=true) — used by prev/next callbacks
 func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, page int, isEdit bool, msgEditID int) error {
 	db := database.GetDB()
 	files, total, err := db.GetUserFiles(context.Background(), userID, page, myFilesPerPage)
 	if err != nil || total == 0 || len(files) == 0 {
-		msg := "**Yᴏᴜ ʜᴀᴠᴇ ɴᴏ ꜰɪʟᴇs ʏᴇᴛ.**\n\nSend me any media to generate a stream link."
+		msg := []styling.StyledTextOption{
+			styling.Bold("Yᴏᴜ ʜᴀᴠᴇ ɴᴏ ꜰɪʟᴇs ʏᴇᴛ.\n\n"),
+			styling.Plain("Send me any media to generate a stream link."),
+		}
 		if isEdit {
 			ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 				Peer:    &tg.InputPeerUser{UserID: userID},
 				ID:      msgEditID,
-				Message: msg,
+				Message: "Yᴏᴜ ʜᴀᴠᴇ ɴᴏ ꜰɪʟᴇs ʏᴇᴛ.\n\nSend me any media to generate a stream link.",
 			})
 		} else {
-			ctx.Reply(u, ext.ReplyTextString(msg), nil)
+			ctx.Reply(u, ext.ReplyTextStyledTextArray(msg), nil)
 		}
 		return dispatcher.EndGroups
 	}
@@ -67,7 +70,6 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	totalPages := int(math.Ceil(float64(total) / float64(myFilesPerPage)))
 	f := files[0]
 
-	// Rebuild links from stored data
 	streamLink := f.Link
 	downloadLink := streamLink + "&d=true"
 	botUsername := ctx.Self.Username
@@ -81,36 +83,24 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	humanSize := humanize.IBytes(uint64(f.FileSize))
 	emoji := fileEmoji(f.MimeType, f.FileName)
 
-	// ── Card text — clean, no markdown signs ─────────────────────────────
-	var cardText string
+	// Build styled card text
+	parts := []styling.StyledTextOption{
+		styling.Bold(fmt.Sprintf("%s Yᴏᴜʀ Fɪʟᴇ\n\n", emoji)),
+		styling.Bold("📂 Nᴀᴍᴇ : "), styling.Bold(f.FileName), styling.Plain("\n\n"),
+		styling.Bold("📦 Sɪᴢᴇ : "), styling.Code(humanSize), styling.Plain("\n\n"),
+		styling.Bold("📥 Dᴏᴡɴʟᴏᴀᴅ :\n"), styling.Code(downloadLink), styling.Plain("\n\n"),
+	}
 	if isMedia {
-		cardText = fmt.Sprintf(
-			"__**%s Yᴏᴜʀ Fɪʟᴇ**__\n\n"+
-				"**📂 Nᴀᴍᴇ :** **%s**\n\n"+
-				"**📦 Sɪᴢᴇ :** `%s`\n\n"+
-				"**📥 Dᴏᴡɴʟᴏᴀᴅ :**\n`%s`\n\n"+
-				"**🖥 Wᴀᴛᴄʜ/Sᴛʀᴇᴀᴍ :**\n`%s`\n\n"+
-				"**🔗 Sʜᴀʀᴇ :**\n`%s`\n\n"+
-				"__Pᴀɢᴇ %d ᴏꜰ %d__",
-			emoji, f.FileName, humanSize,
-			downloadLink, streamLink, shareLink,
-			page+1, totalPages,
-		)
-	} else {
-		cardText = fmt.Sprintf(
-			"__**%s Yᴏᴜʀ Fɪʟᴇ**__\n\n"+
-				"**📂 Nᴀᴍᴇ :** **%s**\n\n"+
-				"**📦 Sɪᴢᴇ :** `%s`\n\n"+
-				"**📥 Dᴏᴡɴʟᴏᴀᴅ :**\n`%s`\n\n"+
-				"**🔗 Sʜᴀʀᴇ :**\n`%s`\n\n"+
-				"__Pᴀɢᴇ %d ᴏꜰ %d__",
-			emoji, f.FileName, humanSize,
-			downloadLink, shareLink,
-			page+1, totalPages,
+		parts = append(parts,
+			styling.Bold("🖥 Wᴀᴛᴄʜ/Sᴛʀᴇᴀᴍ :\n"), styling.Code(streamLink), styling.Plain("\n\n"),
 		)
 	}
+	parts = append(parts,
+		styling.Bold("🔗 Sʜᴀʀᴇ :\n"), styling.Code(shareLink), styling.Plain("\n\n"),
+		styling.Italic(fmt.Sprintf("Pᴀɢᴇ %d ᴏꜰ %d", page+1, totalPages)),
+	)
 
-	// ── Row 1: Stream + Download (video) or Download + Share (others) ─────
+	// Row 1
 	var linkRow tg.KeyboardButtonRow
 	if isVideo {
 		linkRow = tg.KeyboardButtonRow{Buttons: []tg.KeyboardButtonClass{
@@ -124,12 +114,10 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 		}}
 	}
 
-	// ── Row 2: Share link row (video only, separate row) ──────────────────
 	shareRow := tg.KeyboardButtonRow{Buttons: []tg.KeyboardButtonClass{
 		&tg.KeyboardButtonURL{Text: "🔗 sʜᴀʀᴇ ʟɪɴᴋ", URL: shareLink},
 	}}
 
-	// ── Pagination row ────────────────────────────────────────────────────
 	isFirst := page == 0
 	isLast := page >= totalPages-1
 	var navButtons []tg.KeyboardButtonClass
@@ -146,7 +134,6 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 		})
 	}
 
-	// Assemble markup
 	rows := []tg.KeyboardButtonRow{linkRow}
 	if isVideo {
 		rows = append(rows, shareRow)
@@ -162,17 +149,20 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 	markup := &tg.ReplyInlineMarkup{Rows: rows}
 
 	if isEdit {
+		// For edits we fall back to plain text since MessagesEditMessage doesn't
+		// have a styled text helper — build a plain version without markdown signs.
+		plainText := buildPlainCard(emoji, f.FileName, humanSize, downloadLink, streamLink, shareLink, isMedia, page+1, totalPages)
 		ctx.Raw.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
 			Peer:        &tg.InputPeerUser{UserID: userID},
 			ID:          msgEditID,
-			Message:     cardText,
+			Message:     plainText,
 			ReplyMarkup: markup,
 			NoWebpage:   true,
 		})
 		return dispatcher.EndGroups
 	}
 
-	// First send: try to attach the actual file thumbnail from the log channel
+	// First send: try to attach the actual file thumbnail
 	sent := false
 	if config.ValueOf.LogChannelID != 0 {
 		tgMsg, fetchErr := m.getLogMessage(ctx, f.MessageID)
@@ -201,10 +191,12 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 				}
 			}
 			if inputMedia != nil {
+				// Build plain caption for media send
+				plainText := buildPlainCard(emoji, f.FileName, humanSize, downloadLink, streamLink, shareLink, isMedia, page+1, totalPages)
 				_, sendErr := ctx.Raw.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
 					Peer:        &tg.InputPeerUser{UserID: userID},
 					Media:       inputMedia,
-					Message:     cardText,
+					Message:     plainText,
 					ReplyMarkup: markup,
 				})
 				if sendErr == nil {
@@ -214,13 +206,27 @@ func (m *command) sendFileCard(ctx *ext.Context, u *ext.Update, userID int64, pa
 		}
 	}
 	if !sent {
-		ctx.Reply(u, ext.ReplyTextString(cardText), &ext.ReplyOpts{Markup: markup})
+		ctx.Reply(u, ext.ReplyTextStyledTextArray(parts), &ext.ReplyOpts{Markup: markup})
 	}
 
 	return dispatcher.EndGroups
 }
 
-// fileEmoji returns a fitting emoji for the file card header
+// buildPlainCard builds a clean card string with no markdown asterisks or underscores.
+func buildPlainCard(emoji, fileName, humanSize, downloadLink, streamLink, shareLink string, isMedia bool, page, totalPages int) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%s Your File\n\n", emoji))
+	sb.WriteString(fmt.Sprintf("Name : %s\n\n", fileName))
+	sb.WriteString(fmt.Sprintf("Size : %s\n\n", humanSize))
+	sb.WriteString(fmt.Sprintf("Download :\n%s\n\n", downloadLink))
+	if isMedia {
+		sb.WriteString(fmt.Sprintf("Watch/Stream :\n%s\n\n", streamLink))
+	}
+	sb.WriteString(fmt.Sprintf("Share :\n%s\n\n", shareLink))
+	sb.WriteString(fmt.Sprintf("Page %d of %d", page, totalPages))
+	return sb.String()
+}
+
 func fileEmoji(mimeType, fileName string) string {
 	switch {
 	case strings.Contains(mimeType, "video"):
@@ -241,7 +247,6 @@ func fileEmoji(mimeType, fileName string) string {
 	}
 }
 
-// getLogMessage fetches a single message from the log channel by its ID.
 func (m *command) getLogMessage(ctx *ext.Context, messageID int) (*tg.Message, error) {
 	channel, err := m.getLogChannelInput(ctx)
 	if err != nil {
@@ -265,8 +270,6 @@ func (m *command) getLogMessage(ctx *ext.Context, messageID int) (*tg.Message, e
 	return msg, nil
 }
 
-// getLogChannelInput resolves the log channel input from peer storage or
-// falls back to a live API call when not yet cached.
 func (m *command) getLogChannelInput(ctx *ext.Context) (*tg.InputChannel, error) {
 	cached := ctx.PeerStorage.GetInputPeerById(config.ValueOf.LogChannelID)
 	if peer, ok := cached.(*tg.InputPeerChannel); ok {
@@ -290,8 +293,6 @@ func (m *command) getLogChannelInput(ctx *ext.Context) (*tg.InputChannel, error)
 	return ch.AsInput(), nil
 }
 
-// myFilesPageCallback is called by handleCallback in start.go when the
-// callback data starts with "mf_page_".
 func (m *command) myFilesPageCallback(ctx *ext.Context, u *ext.Update, pageStr string) error {
 	page, err := strconv.Atoi(pageStr)
 	if err != nil || page < 0 {
