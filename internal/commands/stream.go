@@ -15,6 +15,7 @@ import (
 	"github.com/celestix/gotgproto/storage"
 	"github.com/celestix/gotgproto/types"
 	"github.com/dustin/go-humanize"
+	"github.com/gotd/td/telegram/message/styling"
 	"github.com/gotd/td/tg"
 )
 
@@ -53,12 +54,11 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 	if database.IsEnabled() {
 		db := database.GetDB()
 		if db.IsUserBanned(context.Background(), chatId) {
-			ctx.Reply(u, ext.ReplyTextString(
-				fmt.Sprintf(
-					"__Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.__\n\n**[Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ](%s) Tʜᴇʏ Wɪʟʟ Hᴇʟᴘ Yᴏᴜ**",
-					getUpdatesURL(),
-				),
-			), nil)
+			ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
+				styling.Italic(fmt.Sprintf("Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.\n\n")),
+				styling.TextURL("Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ", getUpdatesURL()),
+				styling.Bold(" Tʜᴇʏ Wɪʟʟ Hᴇʟᴘ Yᴏᴜ"),
+			}), nil)
 			return dispatcher.EndGroups
 		}
 	}
@@ -78,7 +78,7 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 
-	// Forward file to log channel (BACKEND — untouched)
+	// Forward file to log channel
 	update, err := utils.ForwardMessages(ctx, chatId, config.ValueOf.LogChannelID, u.EffectiveMessage.ID)
 	if err != nil {
 		utils.Logger.Sugar().Error(err)
@@ -111,13 +111,13 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 
-	// Hash & link generation (BACKEND — untouched)
+	// Hash & link generation
 	fullHash := utils.PackFile(file.FileName, file.FileSize, file.MimeType, file.ID)
 	hash := utils.GetShortHash(fullHash)
 	streamLink := fmt.Sprintf("%s/stream/%d?hash=%s", config.ValueOf.Host, messageID, hash)
 	downloadLink := streamLink + "&d=true"
 
-	// Track in database — store full metadata for /myfiles
+	// Track in database
 	if database.IsEnabled() {
 		db := database.GetDB()
 		_ = db.AddFileLink(context.Background(), database.FileLink{
@@ -132,10 +132,7 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		db.IncrLinks(context.Background(), chatId)
 	}
 
-	// Human-readable file size
 	fileSize := humanize.IBytes(uint64(file.FileSize))
-
-	// Share link
 	botUsername := ctx.Self.Username
 	shareLink := fmt.Sprintf("https://t.me/%s?start=file_%d_%s", botUsername, messageID, hash)
 
@@ -144,50 +141,34 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		strings.Contains(file.MimeType, "audio") ||
 		strings.Contains(file.MimeType, "pdf")
 
-	// ── Reply text — clean, no markdown signs ────────────────────────────
-	var replyText string
+	// Build styled reply text
+	var styledParts []styling.StyledTextOption
+	styledParts = append(styledParts,
+		styling.Bold("𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !\n\n"),
+		styling.Bold("📂 Fɪʟᴇ ɴᴀᴍᴇ : "), styling.Bold(file.FileName), styling.Plain("\n\n"),
+		styling.Bold("📦 Fɪʟᴇ ꜱɪᴢᴇ : "), styling.Code(fileSize), styling.Plain("\n\n"),
+		styling.Bold("📥 Dᴏᴡɴʟᴏᴀᴅ : "), styling.Code(downloadLink), styling.Plain("\n\n"),
+	)
 	if isMedia {
-		replyText = fmt.Sprintf(
-			"__**𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !**__\n\n"+
-				"**📂 Fɪʟᴇ ɴᴀᴍᴇ :** **%s**\n\n"+
-				"**📦 Fɪʟᴇ ꜱɪᴢᴇ :** `%s`\n\n"+
-				"**📥 Dᴏᴡɴʟᴏᴀᴅ :** `%s`\n\n"+
-				"**🖥 Wᴀᴛᴄʜ :** `%s`\n\n"+
-				"**🔗 Sʜᴀʀᴇ :** `%s`\n\n"+
-				"Oᴘᴇɴ ᴛʜɪs ʟɪɴᴋ ᴏɴ Bʀᴏᴡsᴇʀ 🌐 ᴛᴏ ᴀᴠᴏɪᴅ ɪssᴜᴇs.",
-			file.FileName, fileSize, downloadLink, streamLink, shareLink,
-		)
-	} else {
-		replyText = fmt.Sprintf(
-			"__**𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !**__\n\n"+
-				"**📂 Fɪʟᴇ ɴᴀᴍᴇ :** **%s**\n\n"+
-				"**📦 Fɪʟᴇ ꜱɪᴢᴇ :** `%s`\n\n"+
-				"**📥 Dᴏᴡɴʟᴏᴀᴅ :** `%s`\n\n"+
-				"**🔗 Sʜᴀʀᴇ :** `%s`\n\n"+
-				"Oᴘᴇɴ ᴛʜɪs ʟɪɴᴋ ᴏɴ Bʀᴏᴡsᴇʀ 🌐 ᴛᴏ ᴀᴠᴏɪᴅ ɪssᴜᴇs.",
-			file.FileName, fileSize, downloadLink, shareLink,
+		styledParts = append(styledParts,
+			styling.Bold("🖥 Wᴀᴛᴄʜ : "), styling.Code(streamLink), styling.Plain("\n\n"),
 		)
 	}
+	styledParts = append(styledParts,
+		styling.Bold("🔗 Sʜᴀʀᴇ : "), styling.Code(shareLink), styling.Plain("\n\n"),
+		styling.Plain("Oᴘᴇɴ ᴛʜɪs ʟɪɴᴋ ᴏɴ Bʀᴏᴡsᴇʀ 🌐 ᴛᴏ ᴀᴠᴏɪᴅ ɪssᴜᴇs."),
+	)
 
-	// ── Inline buttons ────────────────────────────────────────────────────
+	// Inline buttons
 	var rows []tg.KeyboardButtonRow
 	if isVideo {
-		// Video: Stream + Download on row 1
 		rows = append(rows, tg.KeyboardButtonRow{
 			Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonURL{Text: "sᴛʀᴇᴀᴍ", URL: streamLink},
 				&tg.KeyboardButtonURL{Text: "ᴅᴏᴡɴʟᴏᴀᴅ", URL: downloadLink},
 			},
 		})
-	} else if isMedia {
-		// Audio/PDF: Download only on row 1
-		rows = append(rows, tg.KeyboardButtonRow{
-			Buttons: []tg.KeyboardButtonClass{
-				&tg.KeyboardButtonURL{Text: "ᴅᴏᴡɴʟᴏᴀᴅ", URL: downloadLink},
-			},
-		})
 	} else {
-		// Other: Download only
 		rows = append(rows, tg.KeyboardButtonRow{
 			Buttons: []tg.KeyboardButtonClass{
 				&tg.KeyboardButtonURL{Text: "ᴅᴏᴡɴʟᴏᴀᴅ", URL: downloadLink},
@@ -195,7 +176,7 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 		})
 	}
 
-	// Row 2: Get File (share link) + Revoke File
+	// Row 2: Get File + Revoke
 	rows = append(rows, tg.KeyboardButtonRow{
 		Buttons: []tg.KeyboardButtonClass{
 			&tg.KeyboardButtonURL{Text: "ɢᴇᴛ ғɪʟᴇ", URL: shareLink},
@@ -212,11 +193,11 @@ func sendLink(ctx *ext.Context, u *ext.Update) error {
 	markup := &tg.ReplyInlineMarkup{Rows: rows}
 
 	if strings.Contains(streamLink, "http://localhost") {
-		_, err = ctx.Reply(u, ext.ReplyTextString(replyText), &ext.ReplyOpts{
+		_, err = ctx.Reply(u, ext.ReplyTextStyledTextArray(styledParts), &ext.ReplyOpts{
 			ReplyToMessageId: u.EffectiveMessage.ID,
 		})
 	} else {
-		_, err = ctx.Reply(u, ext.ReplyTextString(replyText), &ext.ReplyOpts{
+		_, err = ctx.Reply(u, ext.ReplyTextStyledTextArray(styledParts), &ext.ReplyOpts{
 			Markup:           markup,
 			ReplyToMessageId: u.EffectiveMessage.ID,
 		})
