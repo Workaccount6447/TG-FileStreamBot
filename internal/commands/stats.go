@@ -1,12 +1,6 @@
 package commands
 
-// Feature #4 — /stats (user-facing personal dashboard)
-//
-// Shows:
-//   • Total files uploaded
-//   • Total storage used across all files
-//   • Total stream links generated (from users.links counter)
-//   • Most recent file name + upload date
+// /stats — user-facing personal dashboard
 
 import (
 	"context"
@@ -18,6 +12,7 @@ import (
 	"github.com/celestix/gotgproto/dispatcher/handlers"
 	"github.com/celestix/gotgproto/ext"
 	"github.com/dustin/go-humanize"
+	"github.com/gotd/td/telegram/message/styling"
 	"github.com/gotd/td/tg"
 )
 
@@ -36,14 +31,17 @@ func (m *command) userStats(ctx *ext.Context, u *ext.Update) error {
 	}
 
 	if database.GetDB().IsUserBanned(context.Background(), chatId) {
-		ctx.Reply(u, ext.ReplyTextString(
-			fmt.Sprintf("__Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.__\n\n**[Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ](%s) Tʜᴇʏ Wɪʟʟ Hᴇʟᴘ Yᴏᴜ**", getUpdatesURL()),
-		), nil)
+		ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
+			styling.Italic("Sᴏʀʀʏ Sɪʀ, Yᴏᴜ ᴀʀᴇ Bᴀɴɴᴇᴅ ᴛᴏ ᴜsᴇ ᴍᴇ.\n\n"),
+			styling.TextURL("Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ", getUpdatesURL()),
+			styling.Bold(" Tʜᴇʏ Wɪʟʟ Hᴇʟᴘ Yᴏᴜ"),
+		}), nil)
 		return dispatcher.EndGroups
 	}
 
-	// Send a "loading" message first — stats aggregation can take a moment
-	loading, _ := ctx.Reply(u, ext.ReplyTextString("__Fᴇᴛᴄʜɪɴɢ ʏᴏᴜʀ sᴛᴀᴛs...__"), nil)
+	loading, _ := ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
+		styling.Italic("Fᴇᴛᴄʜɪɴɢ ʏᴏᴜʀ sᴛᴀᴛs..."),
+	}), nil)
 
 	stats, err := database.GetDB().GetUserStats(context.Background(), chatId)
 	if err != nil || stats == nil {
@@ -51,7 +49,6 @@ func (m *command) userStats(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 
-	// Delete the loading message
 	if loading != nil {
 		ctx.Raw.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
 			Revoke: true,
@@ -59,29 +56,25 @@ func (m *command) userStats(ctx *ext.Context, u *ext.Update) error {
 		})
 	}
 
-	// ── Most recent file line ──────────────────────────────────────────────
-	recentLine := "__ɴᴏɴᴇ ʏᴇᴛ__"
+	recentLine := "ɴᴏɴᴇ ʏᴇᴛ"
+	recentIsLink := false
+	recentURL := ""
 	if stats.NewestFile != nil {
-		recentLine = fmt.Sprintf(
-			"`%s` (%s)",
-			stats.NewestFile.FileName,
-			humanize.Time(stats.NewestFile.CreatedAt),
-		)
+		recentLine = fmt.Sprintf("%s (%s)", stats.NewestFile.FileName, humanize.Time(stats.NewestFile.CreatedAt))
+		recentIsLink = false
+		_ = recentIsLink
+		_ = recentURL
 	}
 
-	text := fmt.Sprintf(
-		"**📊 Yᴏᴜʀ Sᴛᴀᴛs**\n\n"+
-			"**📁 Fɪʟᴇs**\n"+
-			"  ⬩ Tᴏᴛᴀʟ ᴜᴘʟᴏᴀᴅᴇᴅ : `%d`\n"+
-			"  ⬩ Tᴏᴛᴀʟ sɪᴢᴇ       : `%s`\n"+
-			"  ⬩ Lɪɴᴋs ɢᴇɴᴇʀᴀᴛᴇᴅ : `%d`\n\n"+
-			"**🕐 Mᴏsᴛ Rᴇᴄᴇɴᴛ Fɪʟᴇ**\n"+
-			"  ⬩ %s",
-		stats.TotalFiles,
-		humanize.IBytes(uint64(stats.TotalSize)),
-		stats.LinksCount,
-		recentLine,
-	)
+	parts := []styling.StyledTextOption{
+		styling.Bold("📊 Yᴏᴜʀ Sᴛᴀᴛs\n\n"),
+		styling.Bold("📁 Fɪʟᴇs\n"),
+		styling.Plain("  ⬩ Tᴏᴛᴀʟ ᴜᴘʟᴏᴀᴅᴇᴅ : "), styling.Code(fmt.Sprintf("%d", stats.TotalFiles)), styling.Plain("\n"),
+		styling.Plain("  ⬩ Tᴏᴛᴀʟ sɪᴢᴇ       : "), styling.Code(humanize.IBytes(uint64(stats.TotalSize))), styling.Plain("\n"),
+		styling.Plain("  ⬩ Lɪɴᴋs ɢᴇɴᴇʀᴀᴛᴇᴅ : "), styling.Code(fmt.Sprintf("%d", stats.LinksCount)), styling.Plain("\n\n"),
+		styling.Bold("🕐 Mᴏsᴛ Rᴇᴄᴇɴᴛ Fɪʟᴇ\n"),
+		styling.Plain("  ⬩ "), styling.Code(recentLine),
+	}
 
 	markup := &tg.ReplyInlineMarkup{
 		Rows: []tg.KeyboardButtonRow{
@@ -92,6 +85,6 @@ func (m *command) userStats(ctx *ext.Context, u *ext.Update) error {
 		},
 	}
 
-	ctx.Reply(u, ext.ReplyTextString(text), &ext.ReplyOpts{Markup: markup})
+	ctx.Reply(u, ext.ReplyTextStyledTextArray(parts), &ext.ReplyOpts{Markup: markup})
 	return dispatcher.EndGroups
 }
