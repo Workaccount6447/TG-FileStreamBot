@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gotd/td/tg"
 	range_parser "github.com/quantumsheep/range-parser"
@@ -63,13 +64,13 @@ func getStreamRoute(ctx *gin.Context) {
 		return
 	}
 
-	// Determine disposition early so it applies to photos too
+	isDownload := ctx.Query("d") == "true"
 	disposition := "inline"
-	if ctx.Query("d") == "true" {
+	if isDownload {
 		disposition = "attachment"
 	}
 
-	// for photo messages (FileSize == 0 from the MTProto photo object)
+	// Photos: FileSize may still be 0 for very old cached entries; serve via UploadGetFile.
 	if file.FileSize == 0 {
 		res, err := worker.Client.API().UploadGetFile(ctx, &tg.UploadGetFileRequest{
 			Location: file.Location,
@@ -86,13 +87,9 @@ func getStreamRoute(ctx *gin.Context) {
 			return
 		}
 		fileBytes := result.GetBytes()
-		photoMime := file.MimeType
-		if disposition == "attachment" {
-			photoMime = "application/octet-stream"
-		}
 		ctx.Header("Content-Disposition", fmt.Sprintf("%s; filename=\"%s\"", disposition, file.FileName))
 		if r.Method != "HEAD" {
-			ctx.Data(http.StatusOK, photoMime, fileBytes)
+			ctx.Data(http.StatusOK, file.MimeType, fileBytes)
 		}
 		return
 	}
@@ -120,12 +117,15 @@ func getStreamRoute(ctx *gin.Context) {
 
 	contentLength := end - start + 1
 	mimeType := file.MimeType
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
 
-	if mimeType == "" || disposition == "attachment" {
-		// Force octet-stream on downloads so browsers never try to preview the file.
-		// When disposition == "attachment" we always override the MIME type — a browser
-		// that receives Content-Type: video/mp4 + Content-Disposition: attachment will
-		// still open its built-in video player instead of saving the file.
+	// Force octet-stream for download links — but only for non-image types.
+	// Images keep their real MIME (image/jpeg etc.) so the browser saves them
+	// with the correct extension. Videos/docs get octet-stream to prevent the
+	// browser opening its built-in player/viewer instead of saving.
+	if isDownload && !strings.HasPrefix(mimeType, "image/") {
 		mimeType = "application/octet-stream"
 	}
 
