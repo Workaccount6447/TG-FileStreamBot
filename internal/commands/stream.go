@@ -123,10 +123,11 @@ func (m *command) sendLink(ctx *ext.Context, u *ext.Update) error {
 	logChannel, chanErr := utils.GetLogChannelPeer(context.Background(), ctx.Raw, ctx.PeerStorage)
 	if chanErr == nil {
 		ctx.Raw.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
-			Peer:    &tg.InputPeerChannel{ChannelID: logChannel.ChannelID, AccessHash: logChannel.AccessHash},
-			Message: logCaption,
-			ReplyTo: &tg.InputReplyToMessage{ReplyToMsgID: messageID},
-			RandomID: rand.Int63(),
+			Peer:      &tg.InputPeerChannel{ChannelID: logChannel.ChannelID, AccessHash: logChannel.AccessHash},
+			Message:   logCaption,
+			ReplyTo:   &tg.InputReplyToMessage{ReplyToMsgID: messageID},
+			NoWebpage: true,
+			RandomID:  rand.Int63(),
 		})
 	}
 
