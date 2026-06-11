@@ -95,3 +95,4 @@ router.HEAD("/uptime", func(ctx *gin.Context) {
 
 routes.Load(log, router)
 return router
+}
