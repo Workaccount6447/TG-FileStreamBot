@@ -78,15 +78,20 @@ func getRouter(log *zap.Logger) *gin.Engine {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	router := gin.Default()
-	router.Use(gin.ErrorLogger())
-	router.GET("/", func(ctx *gin.Context) {
-		ctx.JSON(http.StatusOK, types.RootResponse{
-			Message: "Server is running.",
-			Ok:      true,
-			Uptime:  utils.TimeFormat(uint64(time.Since(startTime).Seconds())),
-			Version: versionString,
-		})
-	})
-	routes.Load(log, router)
-	return router
-}
+router.Use(gin.ErrorLogger())
+
+router.GET("/", func(ctx *gin.Context) {
+    ctx.JSON(http.StatusOK, types.RootResponse{
+        Message: "Server is running.",
+        Ok:      true,
+        Uptime:  utils.TimeFormat(uint64(time.Since(startTime).Seconds())),
+        Version: versionString,
+    })
+})
+
+router.HEAD("/uptime", func(ctx *gin.Context) {
+    ctx.Status(http.StatusOK)
+})
+
+routes.Load(log, router)
+return router
