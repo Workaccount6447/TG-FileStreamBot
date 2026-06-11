@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -26,20 +25,14 @@ type BannedUser struct {
 	BanDate time.Time `bson:"ban_date"`
 }
 
-// FileLink stores every file a user has streamed through the bot.
-// Extended fields (FileName, FileSize, MimeType, MessageID, Hash) are used
-// by /myfiles to show rich info and rebuild stream/download/share links
-// without querying Telegram again.
+// FileLink now stores only what cannot be fetched live from the log channel.
+// user_id   — who owns the file
+// message_id — message ID in the log channel (used to fetch file info live)
+// created_at — for sorting newest-first in /myfiles
 type FileLink struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty"`
-	UserID    int64              `bson:"user_id"`
-	Link      string             `bson:"link"`        // stream URL
-	FileName  string             `bson:"file_name"`
-	FileSize  int64              `bson:"file_size"`
-	MimeType  string             `bson:"mime_type"`
-	MessageID int                `bson:"message_id"`
-	Hash      string             `bson:"hash"`        // short hash
-	CreatedAt time.Time          `bson:"created_at"`
+	UserID    int64     `bson:"user_id"`
+	MessageID int       `bson:"message_id"`
+	CreatedAt time.Time `bson:"created_at"`
 }
 
 type DB struct {
@@ -101,26 +94,24 @@ func Init(uri string) error {
 		links:  db.Collection("links"),
 	}
 
-	// Ensure indexes for fast per-user pagination
+	// Index for fast per-user pagination newest-first
 	instance.links.Indexes().CreateOne(context.Background(), mongo.IndexModel{
 		Keys:    bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: -1}},
 		Options: options.Index().SetBackground(true),
 	})
 
-	// Drop legacy join_date field from all existing user documents
 	instance.MigrateDropJoinDate(context.Background())
 
 	return nil
 }
 
-func IsEnabled() bool  { return instance != nil }
-func GetDB() *DB       { return instance }
+func IsEnabled() bool { return instance != nil }
+func GetDB() *DB      { return instance }
 
 // ---- User Management ----
 
 func (d *DB) AddUser(ctx context.Context, id int64) error {
-	user := User{ID: id, Links: 0}
-	_, err := d.users.InsertOne(ctx, user)
+	_, err := d.users.InsertOne(ctx, User{ID: id, Links: 0})
 	return err
 }
 
@@ -188,23 +179,17 @@ func (d *DB) TotalLinks(ctx context.Context) (int64, error) {
 	return d.links.CountDocuments(ctx, bson.M{})
 }
 
-// AddFileLink stores full file metadata so /myfiles can display rich cards.
-func (d *DB) AddFileLink(ctx context.Context, fl FileLink) error {
-	fl.CreatedAt = time.Now()
-	_, err := d.links.InsertOne(ctx, fl)
+// AddFileLink stores only user_id, message_id, created_at.
+func (d *DB) AddFileLink(ctx context.Context, userID int64, messageID int) error {
+	_, err := d.links.InsertOne(ctx, FileLink{
+		UserID:    userID,
+		MessageID: messageID,
+		CreatedAt: time.Now(),
+	})
 	return err
 }
 
-// Legacy shim so existing callers of AddLink still compile.
-func (d *DB) AddLink(ctx context.Context, userID int64, link string) error {
-	return d.AddFileLink(ctx, FileLink{
-		UserID: userID,
-		Link:   link,
-	})
-}
-
 // GetUserFiles returns one page of FileLink records for a user, newest first.
-// page is 0-based. Returns records and the total count for that user.
 func (d *DB) GetUserFiles(ctx context.Context, userID int64, page, perPage int) ([]FileLink, int64, error) {
 	filter := bson.M{"user_id": userID}
 	total, err := d.links.CountDocuments(ctx, filter)
@@ -230,14 +215,6 @@ func (d *DB) GetUserFiles(ctx context.Context, userID int64, page, perPage int) 
 	return files, total, nil
 }
 
-// DeleteFileLink removes a specific link by its ObjectID.
-func (d *DB) DeleteFileLink(ctx context.Context, id primitive.ObjectID) error {
-	_, err := d.links.DeleteOne(ctx, bson.M{"_id": id})
-	return err
-}
-
-// ── New methods for /clearfiles and /stats ────────────────────────────────
-
 // DeleteUserFiles removes ALL file links for a user. Used by /clearfiles.
 func (d *DB) DeleteUserFiles(ctx context.Context, userID int64) (int64, error) {
 	res, err := d.links.DeleteMany(ctx, bson.M{"user_id": userID})
@@ -247,48 +224,15 @@ func (d *DB) DeleteUserFiles(ctx context.Context, userID int64) (int64, error) {
 	return res.DeletedCount, nil
 }
 
-// UserStats holds the personal statistics shown by /stats.
-type UserStats struct {
-	TotalFiles  int64
-	TotalSize   int64
-	LinksCount  int64
-	NewestFile  *FileLink
-}
-
-// GetUserStats aggregates personal stats for a single user.
+// GetUserStats returns personal stats. Size is not stored anymore — only file count and link count.
 func (d *DB) GetUserStats(ctx context.Context, userID int64) (*UserStats, error) {
 	filter := bson.M{"user_id": userID}
 
-	// Total file count
 	totalFiles, err := d.links.CountDocuments(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	// Total size via aggregation pipeline
-	pipeline := mongo.Pipeline{
-		{{Key: "$match", Value: filter}},
-		{{Key: "$group", Value: bson.D{
-			{Key: "_id", Value: nil},
-			{Key: "total_size", Value: bson.D{{Key: "$sum", Value: "$file_size"}}},
-		}}},
-	}
-	cursor, err := d.links.Aggregate(ctx, pipeline)
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-	var totalSize int64
-	for cursor.Next(ctx) {
-		var result struct {
-			TotalSize int64 `bson:"total_size"`
-		}
-		if err := cursor.Decode(&result); err == nil {
-			totalSize = result.TotalSize
-		}
-	}
-
-	// Newest file
 	opts := options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}})
 	var newest FileLink
 	var newestPtr *FileLink
@@ -296,7 +240,6 @@ func (d *DB) GetUserStats(ctx context.Context, userID int64) (*UserStats, error)
 		newestPtr = &newest
 	}
 
-	// User join date + link count
 	user, err := d.GetUser(ctx, userID)
 	var linksCount int64
 	if err == nil {
@@ -305,14 +248,18 @@ func (d *DB) GetUserStats(ctx context.Context, userID int64) (*UserStats, error)
 
 	return &UserStats{
 		TotalFiles: totalFiles,
-		TotalSize:  totalSize,
 		LinksCount: linksCount,
 		NewestFile: newestPtr,
 	}, nil
 }
 
-// MigrateDropJoinDate removes the legacy join_date field from all user documents.
-// Safe to call on every startup — unset on a field that doesn't exist is a no-op.
+// UserStats — TotalSize removed since we no longer store file_size in DB.
+type UserStats struct {
+	TotalFiles int64
+	LinksCount int64
+	NewestFile *FileLink
+}
+
 func (d *DB) MigrateDropJoinDate(ctx context.Context) {
 	d.users.UpdateMany(
 		ctx,
