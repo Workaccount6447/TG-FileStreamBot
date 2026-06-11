@@ -26,7 +26,7 @@ func ownerOnly(next func(*ext.Context, *ext.Update) error) func(*ext.Context, *e
 	return func(ctx *ext.Context, u *ext.Update) error {
 		user := u.EffectiveUser()
 		if user == nil || !isOwner(user.ID) {
-			ctx.Reply(u, ext.ReplyTextString("⛔ You are not authorised to use this command."), nil)
+			ctx.Reply(u, ext.ReplyTextString("You are not authorised to use this command."), nil)
 			return dispatcher.EndGroups
 		}
 		return next(ctx, u)
@@ -35,7 +35,7 @@ func ownerOnly(next func(*ext.Context, *ext.Update) error) func(*ext.Context, *e
 
 func requireDB(ctx *ext.Context, u *ext.Update) bool {
 	if !database.IsEnabled() {
-		ctx.Reply(u, ext.ReplyTextString("❌ Database not configured. Set DATABASE_URL in your env file."), nil)
+		ctx.Reply(u, ext.ReplyTextString("Database not configured. Set DATABASE_URL in your env file."), nil)
 		return false
 	}
 	return true
@@ -44,59 +44,62 @@ func requireDB(ctx *ext.Context, u *ext.Update) bool {
 func (m *command) LoadAdmin(d dispatcher.Dispatcher) {
 	log := m.log.Named("admin")
 	defer log.Sugar().Info("Loaded")
-	d.AddHandler(handlers.NewCommand("ban", ownerOnly(banUser)))
-	d.AddHandler(handlers.NewCommand("unban", ownerOnly(unbanUser)))
+	d.AddHandler(handlers.NewCommand("ban", ownerOnly(m.banUser)))
+	d.AddHandler(handlers.NewCommand("unban", ownerOnly(m.unbanUser)))
 	d.AddHandler(handlers.NewCommand("status", ownerOnly(status)))
 	d.AddHandler(handlers.NewCommand("broadcast", ownerOnly(m.broadcast)))
 }
 
-func resolveTargetID(u *ext.Update) (targetID int64, display string, errMsg string) {
+// resolveTargetID reads a user ID from either:
+// 1. The command argument: /ban 12345
+// 2. A reply to a message — fetches the replied message manually since
+//    gotgproto does not pre-populate ReplyToMessage on command updates.
+func (m *command) resolveTargetID(ctx *ext.Context, u *ext.Update) (targetID int64, display string, errMsg string) {
 	parts := strings.Fields(u.EffectiveMessage.Text)
-
 	if len(parts) >= 2 {
 		id, err := strconv.ParseInt(parts[1], 10, 64)
 		if err != nil {
-			return 0, "", "❌ Invalid user ID. Provide a numeric ID or reply to a message."
+			return 0, "", "Invalid user ID. Provide a numeric ID or reply to a message."
 		}
-		return id, fmt.Sprintf("`%d`", id), ""
+		return id, fmt.Sprintf("%d", id), ""
 	}
 
-	reply := u.EffectiveMessage.ReplyToMessage
-	if reply != nil && reply.Message != nil {
-		fromID := reply.Message.FromID
-		if peerUser, ok := fromID.(*tg.PeerUser); ok {
-			id := peerUser.UserID
-			name := fmt.Sprintf("%d", id)
-			if u.Entities != nil {
-				if tgUser, exists := u.Entities.Users[id]; exists {
-					if user, ok := tgUser.AsNotEmpty(); ok {
-						name = user.FirstName
-						if user.Username != "" {
-							name = "@" + user.Username
+	// Check raw ReplyTo header and fetch the message manually
+	rawMsg := u.EffectiveMessage.Message
+	if rawMsg != nil {
+		if replyHeader, ok := rawMsg.ReplyTo.(*tg.MessageReplyHeader); ok && replyHeader != nil {
+			res, err := ctx.Raw.MessagesGetMessages(ctx, &tg.MessagesGetMessagesRequest{
+				ID: []tg.InputMessageClass{&tg.InputMessageID{ID: replyHeader.ReplyToMsgID}},
+			})
+			if err == nil {
+				if msgs, ok2 := res.(*tg.MessagesMessages); ok2 && len(msgs.Messages) > 0 {
+					if msg, ok3 := msgs.Messages[0].(*tg.Message); ok3 {
+						if peerUser, ok4 := msg.FromID.(*tg.PeerUser); ok4 {
+							id := peerUser.UserID
+							return id, fmt.Sprintf("%d", id), ""
 						}
 					}
 				}
 			}
-			return id, fmt.Sprintf("[%s](tg://user?id=%d)", name, id), ""
 		}
 	}
 
-	return 0, "", "Usage: `/ban <user_id>` or reply to a user's message with `/ban`"
+	return 0, "", "Usage: /ban <user_id> or reply to a user's message with /ban"
 }
 
-func banUser(ctx *ext.Context, u *ext.Update) error {
+func (m *command) banUser(ctx *ext.Context, u *ext.Update) error {
 	if !requireDB(ctx, u) {
 		return dispatcher.EndGroups
 	}
 
-	targetID, displayName, errMsg := resolveTargetID(u)
+	targetID, displayName, errMsg := m.resolveTargetID(ctx, u)
 	if errMsg != "" {
 		ctx.Reply(u, ext.ReplyTextString(errMsg), nil)
 		return dispatcher.EndGroups
 	}
 
 	if isOwner(targetID) {
-		ctx.Reply(u, ext.ReplyTextString("❌ You cannot ban the owner."), nil)
+		ctx.Reply(u, ext.ReplyTextString("You cannot ban the owner."), nil)
 		return dispatcher.EndGroups
 	}
 
@@ -105,8 +108,7 @@ func banUser(ctx *ext.Context, u *ext.Update) error {
 	err := db.BanUser(bgCtx, targetID)
 	if err == database.ErrUserAlreadyBanned {
 		ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
-			styling.Plain(displayName + " "),
-			styling.Bold("is Already Banned"),
+			styling.Code(displayName), styling.Bold(" is Already Banned"),
 		}), nil)
 		return dispatcher.EndGroups
 	}
@@ -118,23 +120,22 @@ func banUser(ctx *ext.Context, u *ext.Update) error {
 
 	ctx.Raw.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
 		Peer:     &tg.InputPeerUser{UserID: targetID},
-		Message:  "Yᴏᴜ ᴀʀᴇ ʙᴀɴɴᴇᴅ ꜰʀᴏᴍ ᴜsɪɴɢ ᴛʜɪs ʙᴏᴛ.",
+		Message:  "You are banned from using this bot.",
 		RandomID: rand.Int63(),
 	})
 
 	ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
-		styling.Plain(displayName + " "),
-		styling.Bold("is Banned ✅"),
+		styling.Code(displayName), styling.Bold(" is Banned"),
 	}), nil)
 	return dispatcher.EndGroups
 }
 
-func unbanUser(ctx *ext.Context, u *ext.Update) error {
+func (m *command) unbanUser(ctx *ext.Context, u *ext.Update) error {
 	if !requireDB(ctx, u) {
 		return dispatcher.EndGroups
 	}
 
-	targetID, displayName, errMsg := resolveTargetID(u)
+	targetID, displayName, errMsg := m.resolveTargetID(ctx, u)
 	if errMsg != "" {
 		ctx.Reply(u, ext.ReplyTextString(errMsg), nil)
 		return dispatcher.EndGroups
@@ -145,8 +146,7 @@ func unbanUser(ctx *ext.Context, u *ext.Update) error {
 	err := db.UnbanUser(bgCtx, targetID)
 	if err == database.ErrUserNotBanned {
 		ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
-			styling.Plain(displayName + " "),
-			styling.Bold("is not Banned"),
+			styling.Code(displayName), styling.Bold(" is not Banned"),
 		}), nil)
 		return dispatcher.EndGroups
 	}
@@ -157,20 +157,19 @@ func unbanUser(ctx *ext.Context, u *ext.Update) error {
 
 	ctx.Raw.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
 		Peer:     &tg.InputPeerUser{UserID: targetID},
-		Message:  "Yᴏᴜ ᴀʀᴇ ᴜɴʙᴀɴɴᴇᴅ. Yᴏᴜ ᴄᴀɴ ᴜsᴇ ᴛʜɪs ʙᴏᴛ ɴᴏᴡ.",
+		Message:  "You are unbanned. You can use this bot now.",
 		RandomID: rand.Int63(),
 	})
 
 	ctx.Reply(u, ext.ReplyTextStyledTextArray([]styling.StyledTextOption{
-		styling.Plain(displayName + " "),
-		styling.Bold("is Unbanned ✅"),
+		styling.Code(displayName), styling.Bold(" is Unbanned"),
 	}), nil)
 	return dispatcher.EndGroups
 }
 
-// /status — owner-only bot stats
 func status(ctx *ext.Context, u *ext.Update) error {
-	if !requireDB(ctx, u) {
+	if !database.IsEnabled() {
+		ctx.Reply(u, ext.ReplyTextString("Database not configured."), nil)
 		return dispatcher.EndGroups
 	}
 	db := database.GetDB()
@@ -180,10 +179,10 @@ func status(ctx *ext.Context, u *ext.Update) error {
 	totalLinks, _ := db.TotalLinks(bgCtx)
 
 	parts := []styling.StyledTextOption{
-		styling.Bold("📊 Bᴏᴛ Sᴛᴀᴛᴜs\n\n"),
-		styling.Bold("👥 Tᴏᴛᴀʟ Usᴇʀs : "), styling.Code(fmt.Sprintf("%d", totalUsers)), styling.Plain("\n"),
-		styling.Bold("🚫 Bᴀɴɴᴇᴅ Usᴇʀs : "), styling.Code(fmt.Sprintf("%d", bannedUsers)), styling.Plain("\n"),
-		styling.Bold("🔗 Lɪɴᴋs Gᴇɴᴇʀᴀᴛᴇᴅ : "), styling.Code(fmt.Sprintf("%d", totalLinks)),
+		styling.Bold("Bot Status\n\n"),
+		styling.Bold("Total Users : "), styling.Code(fmt.Sprintf("%d", totalUsers)), styling.Plain("\n"),
+		styling.Bold("Banned Users : "), styling.Code(fmt.Sprintf("%d", bannedUsers)), styling.Plain("\n"),
+		styling.Bold("Links Generated : "), styling.Code(fmt.Sprintf("%d", totalLinks)),
 	}
 	ctx.Reply(u, ext.ReplyTextStyledTextArray(parts), nil)
 	return dispatcher.EndGroups
@@ -193,9 +192,35 @@ func (m *command) broadcast(ctx *ext.Context, u *ext.Update) error {
 	if !requireDB(ctx, u) {
 		return dispatcher.EndGroups
 	}
-	replyMsg := u.EffectiveMessage.ReplyToMessage
-	if replyMsg == nil {
+
+	// gotgproto does not pre-populate ReplyToMessage on command updates.
+	// Read the raw ReplyTo header and fetch the message manually.
+	rawMsg := u.EffectiveMessage.Message
+	if rawMsg == nil {
 		ctx.Reply(u, ext.ReplyTextString("Reply to a message to broadcast it."), nil)
+		return dispatcher.EndGroups
+	}
+	replyHeader, ok := rawMsg.ReplyTo.(*tg.MessageReplyHeader)
+	if !ok || replyHeader == nil {
+		ctx.Reply(u, ext.ReplyTextString("Reply to a message to broadcast it."), nil)
+		return dispatcher.EndGroups
+	}
+
+	res, err := ctx.Raw.MessagesGetMessages(ctx, &tg.MessagesGetMessagesRequest{
+		ID: []tg.InputMessageClass{&tg.InputMessageID{ID: replyHeader.ReplyToMsgID}},
+	})
+	if err != nil {
+		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("Could not fetch replied message: %s", err.Error())), nil)
+		return dispatcher.EndGroups
+	}
+	msgs, ok := res.(*tg.MessagesMessages)
+	if !ok || len(msgs.Messages) == 0 {
+		ctx.Reply(u, ext.ReplyTextString("Replied message not found."), nil)
+		return dispatcher.EndGroups
+	}
+	replyMsg, ok := msgs.Messages[0].(*tg.Message)
+	if !ok {
+		ctx.Reply(u, ext.ReplyTextString("Could not read replied message."), nil)
 		return dispatcher.EndGroups
 	}
 
@@ -203,13 +228,11 @@ func (m *command) broadcast(ctx *ext.Context, u *ext.Update) error {
 	bgCtx := context.Background()
 	totalUsers, _ := db.TotalUsers(bgCtx)
 
-	ctx.Reply(u, ext.ReplyTextString(
-		"Broadcast initiated! You will be notified with log file when all the users are notified.",
-	), nil)
+	ctx.Reply(u, ext.ReplyTextString("Broadcast started. You will be notified with a log when done."), nil)
 
 	cursor, err := db.GetAllUsers(bgCtx)
 	if err != nil {
-		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("❌ DB error: %s", err.Error())), nil)
+		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("DB error: %s", err.Error())), nil)
 		return dispatcher.EndGroups
 	}
 	defer cursor.Close(bgCtx)
@@ -217,7 +240,6 @@ func (m *command) broadcast(ctx *ext.Context, u *ext.Update) error {
 	start := time.Now()
 	done, success, failed := 0, 0, 0
 	var failedLog []string
-
 	ownerID := u.EffectiveChat().GetID()
 
 	for cursor.Next(bgCtx) {
@@ -237,7 +259,7 @@ func (m *command) broadcast(ctx *ext.Context, u *ext.Update) error {
 		} else {
 			_, sendErr = ctx.Raw.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
 				Peer:     &tg.InputPeerUser{UserID: user.ID},
-				Message:  replyMsg.Text,
+				Message:  replyMsg.Message,
 				RandomID: rand.Int63(),
 			})
 		}
@@ -253,12 +275,11 @@ func (m *command) broadcast(ctx *ext.Context, u *ext.Update) error {
 
 	elapsed := time.Since(start)
 	result := fmt.Sprintf(
-		"broadcast completed in `%s`\n\nTotal users %d.\nTotal done %d, %d success and %d failed.",
+		"Broadcast completed in %s\n\nTotal users: %d\nDone: %d | Success: %d | Failed: %d",
 		elapsed.Round(time.Second).String(), totalUsers, done, success, failed,
 	)
 	if len(failedLog) > 0 {
-		logContent := strings.Join(failedLog, "\n")
-		_ = os.WriteFile("broadcast.txt", []byte(logContent), 0644)
+		_ = os.WriteFile("broadcast.txt", []byte(strings.Join(failedLog, "\n")), 0644)
 	}
 	ctx.Reply(u, ext.ReplyTextString(result), nil)
 	return dispatcher.EndGroups
