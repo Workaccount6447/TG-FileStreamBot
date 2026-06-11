@@ -68,8 +68,8 @@ func (m *command) resolveTargetID(ctx *ext.Context, u *ext.Update) (targetID int
 	rawMsg := u.EffectiveMessage.Message
 	if rawMsg != nil {
 		if replyHeader, ok := rawMsg.ReplyTo.(*tg.MessageReplyHeader); ok && replyHeader != nil {
-			res, err := ctx.Raw.MessagesGetMessages(ctx, &tg.MessagesGetMessagesRequest{
-				ID: []tg.InputMessageClass{&tg.InputMessageID{ID: replyHeader.ReplyToMsgID}},
+			res, err := ctx.Raw.MessagesGetMessages(ctx, []tg.InputMessageClass{
+				&tg.InputMessageID{ID: replyHeader.ReplyToMsgID},
 			})
 			if err == nil {
 				if msgs, ok2 := res.(*tg.MessagesMessages); ok2 && len(msgs.Messages) > 0 {
@@ -206,8 +206,8 @@ func (m *command) broadcast(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 
-	res, err := ctx.Raw.MessagesGetMessages(ctx, &tg.MessagesGetMessagesRequest{
-		ID: []tg.InputMessageClass{&tg.InputMessageID{ID: replyHeader.ReplyToMsgID}},
+	res, err := ctx.Raw.MessagesGetMessages(ctx, []tg.InputMessageClass{
+		&tg.InputMessageID{ID: replyHeader.ReplyToMsgID},
 	})
 	if err != nil {
 		ctx.Reply(u, ext.ReplyTextString(fmt.Sprintf("Could not fetch replied message: %s", err.Error())), nil)
