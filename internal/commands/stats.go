@@ -1,7 +1,5 @@
 package commands
 
-// /stats — user-facing personal dashboard
-
 import (
 	"context"
 	"fmt"
@@ -11,7 +9,6 @@ import (
 	"github.com/celestix/gotgproto/dispatcher"
 	"github.com/celestix/gotgproto/dispatcher/handlers"
 	"github.com/celestix/gotgproto/ext"
-	"github.com/dustin/go-humanize"
 	"github.com/gotd/td/telegram/message/styling"
 	"github.com/gotd/td/tg"
 )
@@ -51,29 +48,15 @@ func (m *command) userStats(ctx *ext.Context, u *ext.Update) error {
 
 	if loading != nil {
 		ctx.Raw.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-			Revoke: true,
-			ID:     []int{loading.ID},
+			Revoke: true, ID: []int{loading.ID},
 		})
-	}
-
-	recentLine := "ɴᴏɴᴇ ʏᴇᴛ"
-	recentIsLink := false
-	recentURL := ""
-	if stats.NewestFile != nil {
-		recentLine = fmt.Sprintf("%s (%s)", stats.NewestFile.FileName, humanize.Time(stats.NewestFile.CreatedAt))
-		recentIsLink = false
-		_ = recentIsLink
-		_ = recentURL
 	}
 
 	parts := []styling.StyledTextOption{
 		styling.Bold("📊 Yᴏᴜʀ Sᴛᴀᴛs\n\n"),
 		styling.Bold("📁 Fɪʟᴇs\n"),
 		styling.Plain("  ⬩ Tᴏᴛᴀʟ ᴜᴘʟᴏᴀᴅᴇᴅ : "), styling.Code(fmt.Sprintf("%d", stats.TotalFiles)), styling.Plain("\n"),
-		styling.Plain("  ⬩ Tᴏᴛᴀʟ sɪᴢᴇ       : "), styling.Code(humanize.IBytes(uint64(stats.TotalSize))), styling.Plain("\n"),
-		styling.Plain("  ⬩ Lɪɴᴋs ɢᴇɴᴇʀᴀᴛᴇᴅ : "), styling.Code(fmt.Sprintf("%d", stats.LinksCount)), styling.Plain("\n\n"),
-		styling.Bold("🕐 Mᴏsᴛ Rᴇᴄᴇɴᴛ Fɪʟᴇ\n"),
-		styling.Plain("  ⬩ "), styling.Code(recentLine),
+		styling.Plain("  ⬩ Lɪɴᴋs ɢᴇɴᴇʀᴀᴛᴇᴅ : "), styling.Code(fmt.Sprintf("%d", stats.LinksCount)),
 	}
 
 	markup := &tg.ReplyInlineMarkup{
