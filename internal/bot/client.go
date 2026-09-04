@@ -2,7 +2,6 @@ package bot
 
 import (
 	"EverythingSuckz/fsb/config"
-	"EverythingSuckz/fsb/internal/commands"
 	"context"
 	"time"
 
@@ -10,11 +9,16 @@ import (
 
 	"github.com/celestix/gotgproto"
 	"github.com/celestix/gotgproto/sessionMaker"
-	"github.com/gotd/td/tg"
 )
 
 var Bot *gotgproto.Client
 
+// StartClient connects the main bot account to Telegram and returns the
+// client. This is web-only mode: no command dispatcher/handlers are loaded
+// (no /start, /myfiles, /admin, etc.) — a separate bot process is assumed to
+// handle user-facing commands and forwarding files into the log channel.
+// This client is only used as the default worker for fetching/streaming
+// files that are already in the log channel.
 func StartClient(log *zap.Logger) (*gotgproto.Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -47,26 +51,8 @@ func StartClient(log *zap.Logger) (*gotgproto.Client, error) {
 		if result.err != nil {
 			return nil, result.err
 		}
-		commands.Load(log, result.client.Dispatcher, result.client)
 		log.Info("Client started", zap.String("username", result.client.Self.Username))
 		Bot = result.client
-		// FIX Bug C: setBotCommands was defined but never called.
-		// Register /start and /myfiles in Telegram's command menu.
-		go setBotCommands(result.client)
 		return result.client, nil
 	}
-}
-
-func setBotCommands(client *gotgproto.Client) {
-	ctx := client.CreateContext()
-	ctx.Raw.BotsSetBotCommands(ctx, &tg.BotsSetBotCommandsRequest{
-		Scope:    &tg.BotCommandScopeDefault{},
-		LangCode: "",
-		Commands: []tg.BotCommand{
-			{Command: "start", Description: "Start the bot"},
-			{Command: "myfiles", Description: "Browse your uploaded files with stream links"},
-			{Command: "stats", Description: "View your personal usage statistics"},
-			{Command: "clearfiles", Description: "Delete all your files from history"},
-		},
-	})
 }

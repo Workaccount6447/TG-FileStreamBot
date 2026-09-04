@@ -61,7 +61,6 @@ func runApp(cmd *cobra.Command, args []string) {
 		log.Sugar().Fatalf("Failed to start workers: %v", err)
 	}
 	workers.AddDefaultClient(mainBot, mainBot.Self)
-	bot.StartUserBot(log)
 	mainLogger.Info("Server started", zap.Int("port", config.ValueOf.Port))
 	mainLogger.Info("File Stream Bot", zap.String("version", versionString))
 	mainLogger.Sugar().Infof("Server is running at %s", config.ValueOf.Host)
